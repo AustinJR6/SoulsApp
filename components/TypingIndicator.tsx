@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View } from "react-native";
+import { theme } from "../constants/theme";
 
 const Dot: React.FC<{ delay: number }> = ({ delay }) => {
   const opacity = useRef(new Animated.Value(0.2)).current;
@@ -49,6 +50,6 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: "#999",
+    backgroundColor: theme.colors.accent,
   },
 });

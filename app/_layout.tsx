@@ -1,12 +1,20 @@
 import "react-native-gesture-handler";
 import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { theme } from "../constants/theme";
 import { PersonalityProvider } from "../contexts/PersonalityContext";
 
 export default function RootLayout() {
   return (
     <PersonalityProvider>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.colors.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
       </Stack>
     </PersonalityProvider>
   );
