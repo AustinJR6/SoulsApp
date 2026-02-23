@@ -41,6 +41,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="vitals"
+        options={{
+          title: "Vitals",
+          tabBarIcon: ({ color, size }) => <Ionicons name="heart-circle" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="outreach"
+        options={{
+          title: "Outreach",
+          tabBarIcon: ({ color, size }) => <Ionicons name="megaphone-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",

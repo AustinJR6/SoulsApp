@@ -46,6 +46,7 @@ export interface ChatThread {
   title: string;
   projectId: string | null;
   backendThreadId: string | null;
+  tools: string[];
   createdAt: string;
   updatedAt: string;
   messages: IMessage[];
@@ -55,4 +56,9 @@ export interface ChatWorkspace {
   threads: ChatThread[];
   projects: ChatProject[];
   activeThreadByPersonality: Record<Personality["id"], string | null>;
+}
+
+export interface ToolDescriptor {
+  id: string;
+  label: string;
 }

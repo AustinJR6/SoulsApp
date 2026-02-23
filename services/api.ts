@@ -51,8 +51,15 @@ export const chatService = {
   sendMessage: async (
     message: string,
     personality: string,
-    threadId?: string | number | null
+    threadId?: string | number | null,
+    healthContext?: string,
+    activeTools?: string[]
   ): Promise<ChatResponse> => {
+    // Prepend compact health snapshot so the AI always has current vitals.
+    // The chat UI shows only the user's original text; the backend sees both.
+    const enrichedMessage =
+      healthContext ? `${healthContext}\n\n${message}` : message;
+
     const response = await fetch(`${API_URL}/api/chat/sync`, {
       method: "POST",
       headers: {
@@ -60,9 +67,10 @@ export const chatService = {
         Accept: "application/json",
       },
       body: JSON.stringify({
-        message,
+        message: enrichedMessage,
         personality,
         thread_id: threadId ?? undefined,
+        active_tools: activeTools ?? undefined,
       }),
     });
     const text = await response.text();
@@ -82,11 +90,81 @@ export const chatService = {
     message: string,
     personality: string,
     onChunk: (chunk: string) => void,
-    threadId?: string | number | null
+    threadId?: string | number | null,
+    healthContext?: string,
+    activeTools?: string[]
   ): Promise<void> => {
     // v1 fallback: keep sync for reliability; migrate to SSE /chat later.
-    const response = await chatService.sendMessage(message, personality, threadId);
+    const response = await chatService.sendMessage(message, personality, threadId, healthContext, activeTools);
     onChunk(response.response);
+  },
+
+  getAvailableTools: async (): Promise<Array<{ id: string; label?: string }>> => {
+    const response = await fetch(`${API_URL}/tools/available`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from /tools/available: ${text}`);
+    }
+
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) =>
+            typeof item === "string"
+              ? { id: item, label: item }
+              : {
+                  id: String((item as { id?: unknown; key?: unknown; name?: unknown }).id ??
+                    (item as { key?: unknown }).key ??
+                    (item as { name?: unknown }).name ??
+                    ""),
+                  label: typeof (item as { label?: unknown }).label === "string"
+                    ? (item as { label: string }).label
+                    : undefined,
+                }
+          )
+          .filter((item) => item.id.length > 0);
+      }
+
+      const objectParsed = parsed as { tools?: unknown };
+      const tools = Array.isArray(objectParsed?.tools) ? objectParsed.tools : [];
+      return tools
+        .map((item) =>
+          typeof item === "string"
+            ? { id: item, label: item }
+            : {
+                id: String((item as { id?: unknown; key?: unknown; name?: unknown }).id ??
+                  (item as { key?: unknown }).key ??
+                  (item as { name?: unknown }).name ??
+                  ""),
+                label: typeof (item as { label?: unknown }).label === "string"
+                  ? (item as { label: string }).label
+                  : undefined,
+              }
+        )
+        .filter((item) => item.id.length > 0);
+    } catch {
+      throw new Error(`Invalid JSON from /tools/available: ${text}`);
+    }
+  },
+
+  updateConversationTools: async (conversationId: string | number, tools: string[]): Promise<void> => {
+    const response = await fetch(`${API_URL}/conversations/${conversationId}/tools`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ active_tools: tools }),
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} from /conversations/${conversationId}/tools: ${text}`);
+    }
   },
 
   getPersonalities: async () => {

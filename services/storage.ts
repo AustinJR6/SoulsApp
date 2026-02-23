@@ -20,6 +20,7 @@ const KEYS = {
   THREAD_IDS_BY_PERSONALITY: "@vessel_thread_ids_by_personality",
   CHAT_HISTORY_BY_PERSONALITY: "@vessel_chat_history_by_personality",
   CHAT_WORKSPACE: "@vessel_chat_workspace",
+  TOOL_DEFAULTS_BY_PERSONALITY: "@vessel_tool_defaults_by_personality",
   USER_PREFERENCES: "@vessel_preferences",
 };
 
@@ -76,6 +77,9 @@ const normalizeWorkspace = (workspace: StoredWorkspace | ChatWorkspace): ChatWor
         title: thread.title || "New chat",
         projectId: thread.projectId ?? null,
         backendThreadId: thread.backendThreadId ?? null,
+        tools: Array.isArray((thread as { tools?: unknown }).tools)
+          ? ((thread as { tools: unknown[] }).tools.filter((tool): tool is string => typeof tool === "string"))
+          : [],
         createdAt: toIso(thread.createdAt),
         updatedAt: toIso(thread.updatedAt),
         messages: normalizeMessages(thread.messages as Array<StoredMessage | IMessage>),
@@ -116,6 +120,7 @@ const migrateLegacyWorkspace = async (): Promise<ChatWorkspace> => {
       title: "Imported chat",
       projectId: null,
       backendThreadId: legacyThreadIds[personality] ?? fallbackThreadId ?? null,
+      tools: [],
       createdAt: toIso(new Date()),
       updatedAt: toIso(messages[0]?.createdAt ?? new Date()),
       messages,
@@ -148,6 +153,24 @@ export const storage = {
 
   setCurrentPersonality: async (personality: string): Promise<void> => {
     await AsyncStorage.setItem(KEYS.CURRENT_PERSONALITY, personality);
+  },
+
+  getToolDefaultsByPersonality: async (): Promise<Record<PersonalityId, string[]>> => {
+    const raw = await AsyncStorage.getItem(KEYS.TOOL_DEFAULTS_BY_PERSONALITY);
+    const parsed = parseJson<Partial<Record<PersonalityId, string[]>>>(raw, {});
+    return {
+      sylana: Array.isArray(parsed.sylana) ? parsed.sylana.filter((tool) => typeof tool === "string") : [],
+      claude: Array.isArray(parsed.claude) ? parsed.claude.filter((tool) => typeof tool === "string") : [],
+    };
+  },
+
+  setToolDefaultsByPersonality: async (value: Partial<Record<PersonalityId, string[]>>): Promise<void> => {
+    const current = await storage.getToolDefaultsByPersonality();
+    const next: Record<PersonalityId, string[]> = {
+      sylana: Array.isArray(value.sylana) ? value.sylana : current.sylana,
+      claude: Array.isArray(value.claude) ? value.claude : current.claude,
+    };
+    await AsyncStorage.setItem(KEYS.TOOL_DEFAULTS_BY_PERSONALITY, JSON.stringify(next));
   },
 
   getChatWorkspace: async (): Promise<ChatWorkspace> => {
