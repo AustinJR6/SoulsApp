@@ -10,7 +10,7 @@ import type {
   SessionStatus,
 } from '../types/outreach';
 
-const BASE_CANDIDATES = [`${API_URL}/api/outreach`, `${API_URL}/outreach`];
+const BASE_CANDIDATES = [`${API_URL}/api/outreach`, `${API_URL}/outreach`, `${API_URL}`];
 
 function toString(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value;
@@ -68,6 +68,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   throw lastError ?? new Error(`No outreach endpoint found for ${path}`);
 }
 
+function isEndpointNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /Endpoint not found|HTTP 404/i.test(error.message);
+}
+
 function mapSession(raw: any): OutreachSession {
   return {
     id: toString(raw?.id),
@@ -112,19 +117,57 @@ function mapDraft(raw: any): EmailDraft {
 
 export const outreachService = {
   async getDashboard(): Promise<DashboardPayload> {
-    const data = await requestJson<any>('/dashboard');
-    const summary = data?.summary ?? data;
-    const recent = data?.recent_sessions ?? data?.recentSessions ?? [];
+    try {
+      const data = await requestJson<any>('/dashboard');
+      const summary = data?.summary ?? data;
+      const recent = data?.recent_sessions ?? data?.recentSessions ?? [];
 
-    return {
-      summary: {
-        draftsAwaitingApproval: Number(summary?.drafts_awaiting_approval ?? summary?.draftsAwaitingApproval ?? 0),
-        prospectsFoundThisWeek: Number(summary?.prospects_found_this_week ?? summary?.prospectsFoundThisWeek ?? 0),
-        emailsApprovedThisWeek: Number(summary?.emails_approved_this_week ?? summary?.emailsApprovedThisWeek ?? 0),
-        sessionsRunThisWeek: Number(summary?.sessions_run_this_week ?? summary?.sessionsRunThisWeek ?? 0),
-      },
-      recentSessions: (Array.isArray(recent) ? recent : []).slice(0, 5).map(mapSession),
-    };
+      return {
+        summary: {
+          draftsAwaitingApproval: Number(summary?.drafts_awaiting_approval ?? summary?.draftsAwaitingApproval ?? 0),
+          prospectsFoundThisWeek: Number(summary?.prospects_found_this_week ?? summary?.prospectsFoundThisWeek ?? 0),
+          emailsApprovedThisWeek: Number(summary?.emails_approved_this_week ?? summary?.emailsApprovedThisWeek ?? 0),
+          sessionsRunThisWeek: Number(summary?.sessions_run_this_week ?? summary?.sessionsRunThisWeek ?? 0),
+        },
+        recentSessions: (Array.isArray(recent) ? recent : []).slice(0, 5).map(mapSession),
+      };
+    } catch (error) {
+      if (!isEndpointNotFoundError(error)) {
+        throw error;
+      }
+
+      // Backend without /dashboard route: compute a dashboard from base endpoints.
+      const [allDraftRows, prospects, sessions] = await Promise.all([
+        requestJson<any>('/email-drafts'),
+        outreachService.getProspects(),
+        outreachService.getRecentSessions(5),
+      ]);
+      const allDrafts: EmailDraft[] = (Array.isArray(allDraftRows) ? allDraftRows : allDraftRows?.items ?? allDraftRows?.drafts ?? [])
+        .map(mapDraft);
+
+      const now = new Date();
+      const oneWeekAgo = new Date(now);
+      oneWeekAgo.setDate(now.getDate() - 7);
+
+      const prospectsFoundThisWeek = prospects.filter((p) => {
+        const createdAt = (p as unknown as { createdAt?: string }).createdAt;
+        if (!createdAt) return false;
+        const d = new Date(createdAt);
+        return !Number.isNaN(d.getTime()) && d >= oneWeekAgo;
+      }).length;
+
+      const emailsApprovedThisWeek = allDrafts.filter((d) => d.status === 'approved').length;
+
+      return {
+        summary: {
+          draftsAwaitingApproval: allDrafts.filter((d) => d.status === 'draft').length,
+          prospectsFoundThisWeek,
+          emailsApprovedThisWeek,
+          sessionsRunThisWeek: sessions.length,
+        },
+        recentSessions: sessions.slice(0, 5),
+      };
+    }
   },
 
   async getDraftQueue(): Promise<EmailDraft[]> {
