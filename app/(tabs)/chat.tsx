@@ -308,25 +308,6 @@ export default function ChatScreen() {
     [activeThread?.tools, currentPersonality, toolDefaultsByPersonality]
   );
 
-  useEffect(() => {
-    if (!activeThread || activeThread.tools.length > 0) {
-      return;
-    }
-
-    const defaults = sanitizeTools(toolDefaultsByPersonality[activeThread.personality] ?? [...DEFAULT_TOOL_IDS]);
-    setWorkspace((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        threads: prev.threads.map((thread) =>
-          thread.id === activeThread.id
-            ? { ...thread, tools: defaults, updatedAt: new Date().toISOString() }
-            : thread
-        ),
-      };
-    });
-  }, [activeThread, toolDefaultsByPersonality]);
-
   const openThread = useCallback((threadId: string) => {
     setWorkspace((prev) => {
       if (!prev) {
@@ -574,7 +555,7 @@ export default function ChatScreen() {
           userMessage.text,
           currentPersonality,
           parsedThreadId || null,
-          healthContextRef.current || undefined,
+          activeTools.includes("health") ? (healthContextRef.current || undefined) : undefined,
           activeTools
         );
 
@@ -762,11 +743,13 @@ export default function ChatScreen() {
         messagesContainerStyle={styles.messageList}
         renderBubble={(props) => <ChatMessage {...props} />}
         renderFooter={() => (isTyping ? <TypingIndicator /> : null)}
-        renderActions={() => (
-          <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
-            <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
-          </Pressable>
-        )}
+        renderActions={() =>
+          activeTools.includes("photos") ? (
+            <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
+              <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
+            </Pressable>
+          ) : null
+        }
       />
 
       <PhotoPicker

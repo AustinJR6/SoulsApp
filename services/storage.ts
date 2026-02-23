@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { IMessage } from "react-native-gifted-chat";
 import { DEFAULT_PERSONALITY } from "../constants/personalities";
+import { DEFAULT_TOOL_IDS, sanitizeTools } from "../constants/tools";
 import { ChatWorkspace, Personality } from "../types";
 
 type PersonalityId = Personality["id"];
@@ -78,8 +79,8 @@ const normalizeWorkspace = (workspace: StoredWorkspace | ChatWorkspace): ChatWor
         projectId: thread.projectId ?? null,
         backendThreadId: thread.backendThreadId ?? null,
         tools: Array.isArray((thread as { tools?: unknown }).tools)
-          ? ((thread as { tools: unknown[] }).tools.filter((tool): tool is string => typeof tool === "string"))
-          : [],
+          ? sanitizeTools((thread as { tools: unknown[] }).tools.filter((tool): tool is string => typeof tool === "string"))
+          : sanitizeTools([...DEFAULT_TOOL_IDS]),
         createdAt: toIso(thread.createdAt),
         updatedAt: toIso(thread.updatedAt),
         messages: normalizeMessages(thread.messages as Array<StoredMessage | IMessage>),
@@ -120,7 +121,7 @@ const migrateLegacyWorkspace = async (): Promise<ChatWorkspace> => {
       title: "Imported chat",
       projectId: null,
       backendThreadId: legacyThreadIds[personality] ?? fallbackThreadId ?? null,
-      tools: [],
+      tools: sanitizeTools([...DEFAULT_TOOL_IDS]),
       createdAt: toIso(new Date()),
       updatedAt: toIso(messages[0]?.createdAt ?? new Date()),
       messages,
