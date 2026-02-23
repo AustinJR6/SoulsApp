@@ -177,13 +177,28 @@ export const chatService = {
     return response.data;
   },
 
-  createThread: async (payload?: { title?: string; personality?: string }) => {
+  createThread: async (payload?: { title?: string; personality?: string; active_tools?: string[] }) => {
     const response = await api.post("/api/threads", payload ?? {});
     return response.data;
   },
 
   getThreadMessages: async (threadId: string | number) => {
     const response = await api.get(`/api/threads/${threadId}/messages`);
+    return response.data;
+  },
+
+  registerDeviceToken: async (
+    token: string,
+    platform: "ios" | "android",
+    provider: "expo" | "fcm" = "expo",
+    metadata: Record<string, unknown> = {}
+  ) => {
+    const response = await api.post("/device-tokens/register", {
+      token,
+      provider,
+      platform,
+      metadata,
+    });
     return response.data;
   },
 };

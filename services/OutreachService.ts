@@ -1,4 +1,4 @@
-import { API_URL } from './api';
+﻿import { API_URL } from './api';
 import type {
   DashboardPayload,
   EmailDraft,
@@ -10,7 +10,7 @@ import type {
   SessionStatus,
 } from '../types/outreach';
 
-const BASE_CANDIDATES = [`${API_URL}/api/outreach`, `${API_URL}/outreach`, `${API_URL}`];
+const BASE_CANDIDATES = [`${API_URL}`];
 
 function toString(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value;
@@ -31,7 +31,10 @@ function normalizeSessionStatus(value: unknown): SessionStatus {
 
 function normalizeProspectStatus(value: unknown): OutreachStatus {
   const status = toString(value, 'new').toLowerCase();
-  if (status === 'drafted' || status === 'approved' || status === 'sent' || status === 'responded') return status;
+  if (status === 'responded') return 'responded';
+  if (status === 'sent' || status === 'email_sent' || status === 'opened' || status === 'clicked') return 'sent';
+  if (status === 'approved') return 'approved';
+  if (status === 'drafted' || status === 'email_drafted') return 'drafted';
   return 'new';
 }
 
@@ -48,14 +51,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
 
-    if (response.status === 404) {
-      lastError = new Error(`Endpoint not found: ${base}${path}`);
-      continue;
-    }
-
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from ${base}${path}: ${text}`);
+      lastError = new Error(`HTTP ${response.status} from ${base}${path}: ${text}`);
+      continue;
     }
 
     try {
@@ -68,18 +67,13 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   throw lastError ?? new Error(`No outreach endpoint found for ${path}`);
 }
 
-function isEndpointNotFoundError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /Endpoint not found|HTTP 404/i.test(error.message);
-}
-
 function mapSession(raw: any): OutreachSession {
   return {
-    id: toString(raw?.id),
+    id: toString(raw?.session_id ?? raw?.id),
     goal: toString(raw?.goal, 'No goal provided'),
     status: normalizeSessionStatus(raw?.status),
-    startedAt: toString(raw?.started_at ?? raw?.startedAt ?? new Date().toISOString()),
-    endedAt: toNullableString(raw?.ended_at ?? raw?.endedAt),
+    startedAt: toString(raw?.started_at ?? raw?.startedAt ?? raw?.created_at ?? raw?.createdAt ?? new Date().toISOString()),
+    endedAt: toNullableString(raw?.completed_at ?? raw?.ended_at ?? raw?.endedAt),
     summary: toString(raw?.summary, ''),
     completionSummary: toString(raw?.completion_summary ?? raw?.completionSummary ?? raw?.summary, ''),
   };
@@ -87,12 +81,12 @@ function mapSession(raw: any): OutreachSession {
 
 function mapProspect(raw: any): Prospect {
   return {
-    id: toString(raw?.id),
+    id: toString(raw?.prospect_id ?? raw?.id),
     companyName: toString(raw?.company_name ?? raw?.companyName, 'Unknown company'),
     location: toNullableString(raw?.location),
     contactName: toString(raw?.contact_name ?? raw?.contactName, 'Unknown contact'),
     contactTitle: toNullableString(raw?.contact_title ?? raw?.contactTitle),
-    contactEmail: toNullableString(raw?.contact_email ?? raw?.contactEmail),
+    contactEmail: toNullableString(raw?.email ?? raw?.contact_email ?? raw?.contactEmail),
     status: normalizeProspectStatus(raw?.status),
   };
 }
@@ -101,100 +95,128 @@ function mapDraft(raw: any): EmailDraft {
   const prospect = raw?.prospect ?? {};
 
   return {
-    id: toString(raw?.id),
-    prospectId: toString(raw?.prospect_id ?? raw?.prospectId ?? prospect?.id),
+    id: toString(raw?.draft_id ?? raw?.id),
+    prospectId: toString(raw?.prospect_id ?? raw?.prospectId ?? prospect?.prospect_id ?? prospect?.id),
     companyName: toString(raw?.company_name ?? raw?.companyName ?? prospect?.company_name ?? prospect?.companyName, 'Unknown company'),
     contactName: toString(raw?.contact_name ?? raw?.contactName ?? prospect?.contact_name ?? prospect?.contactName, 'Unknown contact'),
     contactTitle: toNullableString(raw?.contact_title ?? raw?.contactTitle ?? prospect?.contact_title ?? prospect?.contactTitle),
-    contactEmail: toNullableString(raw?.contact_email ?? raw?.contactEmail ?? prospect?.contact_email ?? prospect?.contactEmail),
+    contactEmail: toNullableString(raw?.email ?? raw?.contact_email ?? raw?.contactEmail ?? prospect?.email ?? prospect?.contact_email ?? prospect?.contactEmail),
     subject: toString(raw?.subject, ''),
     body: toString(raw?.body, ''),
-    aiModel: toString(raw?.ai_model ?? raw?.aiModel ?? raw?.drafted_by, 'sylana').toLowerCase(),
+    aiModel: toString(raw?.entity ?? raw?.ai_model ?? raw?.aiModel ?? raw?.drafted_by, 'sylana').toLowerCase(),
     status: toString(raw?.status, 'draft').toLowerCase(),
-    draftedAt: toString(raw?.drafted_at ?? raw?.draftedAt ?? raw?.created_at ?? raw?.createdAt ?? new Date().toISOString()),
+    draftedAt: toString(raw?.created_at ?? raw?.drafted_at ?? raw?.draftedAt ?? new Date().toISOString()),
   };
 }
 
 export const outreachService = {
   async getDashboard(): Promise<DashboardPayload> {
-    try {
-      const data = await requestJson<any>('/dashboard');
-      const summary = data?.summary ?? data;
-      const recent = data?.recent_sessions ?? data?.recentSessions ?? [];
+    const [draftRows, prospects, sessions] = await Promise.all([
+      requestJson<any>('/email-drafts'),
+      outreachService.getProspects(),
+      outreachService.getRecentSessions(5),
+    ]);
 
-      return {
-        summary: {
-          draftsAwaitingApproval: Number(summary?.drafts_awaiting_approval ?? summary?.draftsAwaitingApproval ?? 0),
-          prospectsFoundThisWeek: Number(summary?.prospects_found_this_week ?? summary?.prospectsFoundThisWeek ?? 0),
-          emailsApprovedThisWeek: Number(summary?.emails_approved_this_week ?? summary?.emailsApprovedThisWeek ?? 0),
-          sessionsRunThisWeek: Number(summary?.sessions_run_this_week ?? summary?.sessionsRunThisWeek ?? 0),
-        },
-        recentSessions: (Array.isArray(recent) ? recent : []).slice(0, 5).map(mapSession),
-      };
-    } catch (error) {
-      if (!isEndpointNotFoundError(error)) {
-        throw error;
-      }
+    const drafts: EmailDraft[] = (Array.isArray(draftRows) ? draftRows : draftRows?.items ?? draftRows?.drafts ?? []).map(mapDraft);
 
-      // Backend without /dashboard route: compute a dashboard from base endpoints.
-      const [allDraftRows, prospects, sessions] = await Promise.all([
-        requestJson<any>('/email-drafts'),
-        outreachService.getProspects(),
-        outreachService.getRecentSessions(5),
-      ]);
-      const allDrafts: EmailDraft[] = (Array.isArray(allDraftRows) ? allDraftRows : allDraftRows?.items ?? allDraftRows?.drafts ?? [])
-        .map(mapDraft);
-
-      const now = new Date();
-      const oneWeekAgo = new Date(now);
-      oneWeekAgo.setDate(now.getDate() - 7);
-
-      const prospectsFoundThisWeek = prospects.filter((p) => {
-        const createdAt = (p as unknown as { createdAt?: string }).createdAt;
-        if (!createdAt) return false;
-        const d = new Date(createdAt);
-        return !Number.isNaN(d.getTime()) && d >= oneWeekAgo;
-      }).length;
-
-      const emailsApprovedThisWeek = allDrafts.filter((d) => d.status === 'approved').length;
-
-      return {
-        summary: {
-          draftsAwaitingApproval: allDrafts.filter((d) => d.status === 'draft').length,
-          prospectsFoundThisWeek,
-          emailsApprovedThisWeek,
-          sessionsRunThisWeek: sessions.length,
-        },
-        recentSessions: sessions.slice(0, 5),
-      };
-    }
+    return {
+      summary: {
+        draftsAwaitingApproval: drafts.filter((d) => d.status === 'draft').length,
+        prospectsFoundThisWeek: prospects.length,
+        emailsApprovedThisWeek: drafts.filter((d) => d.status === 'approved').length,
+        sessionsRunThisWeek: sessions.length,
+      },
+      recentSessions: sessions.slice(0, 5),
+    };
   },
 
   async getDraftQueue(): Promise<EmailDraft[]> {
-    const data = await requestJson<any>('/email-drafts?status=draft');
+    const data = await requestJson<any>('/email-drafts');
     const rows = Array.isArray(data) ? data : data?.items ?? data?.drafts ?? [];
     return rows.map(mapDraft);
   },
 
   async getDraftById(id: string): Promise<EmailDraft> {
-    const data = await requestJson<any>(`/email-drafts/${id}`);
-    return mapDraft(data);
+    const drafts = await outreachService.getDraftQueue();
+    const found = drafts.find((d) => d.id === id);
+    if (!found) throw new Error(`Draft not found: ${id}`);
+    return found;
   },
 
   async approveDraft(id: string, payload: { subject: string; body: string }): Promise<EmailDraft> {
-    const data = await requestJson<any>(`/email-drafts/${id}/approve`, {
+    const current = await outreachService.getDraftById(id).catch(() => ({
+      id,
+      prospectId: '',
+      companyName: 'Unknown company',
+      contactName: 'Unknown contact',
+      contactTitle: null,
+      contactEmail: null,
+      subject: payload.subject,
+      body: payload.body,
+      aiModel: 'sylana',
+      status: 'draft',
+      draftedAt: new Date().toISOString(),
+    } as EmailDraft));
+
+    await requestJson<any>(`/email-drafts/${id}/approve`, {
       method: 'PATCH',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({}),
     });
-    return mapDraft(data);
+
+    return {
+      ...current,
+      subject: payload.subject,
+      body: payload.body,
+      status: 'approved',
+    };
   },
 
   async rejectDraft(id: string, payload: { subject: string; body: string }): Promise<EmailDraft> {
-    const data = await requestJson<any>(`/email-drafts/${id}/reject`, {
+    const current = await outreachService.getDraftById(id).catch(() => ({
+      id,
+      prospectId: '',
+      companyName: 'Unknown company',
+      contactName: 'Unknown contact',
+      contactTitle: null,
+      contactEmail: null,
+      subject: payload.subject,
+      body: payload.body,
+      aiModel: 'sylana',
+      status: 'draft',
+      draftedAt: new Date().toISOString(),
+    } as EmailDraft));
+
+    await requestJson<any>(`/email-drafts/${id}/reject`, {
       method: 'PATCH',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ feedback: payload.body?.slice(0, 280) || payload.subject || 'Needs revision' }),
     });
-    return mapDraft(data);
+
+    return {
+      ...current,
+      status: 'rejected',
+    };
+  },
+
+  async sendDraft(id: string): Promise<{ success: boolean; status: string }> {
+    const data = await requestJson<any>(`/email-drafts/${id}/send`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    return {
+      success: Boolean(data?.success),
+      status: toString(data?.status, 'sent'),
+    };
+  },
+
+  async sendApprovedBatch(limit = 20): Promise<{ success: boolean; sent: number }> {
+    const data = await requestJson<any>('/email-drafts/send-approved-batch', {
+      method: 'POST',
+      body: JSON.stringify({ limit }),
+    });
+    return {
+      success: Boolean(data?.success),
+      sent: Number(data?.sent ?? 0),
+    };
   },
 
   async getProspects(status?: OutreachStatus): Promise<Prospect[]> {
@@ -206,40 +228,49 @@ export const outreachService = {
 
   async getProspectById(id: string): Promise<ProspectDetail> {
     const data = await requestJson<any>(`/prospects/${id}`);
-    const mapped = mapProspect(data);
+    const raw = data?.prospect ?? data;
+    const mapped = mapProspect(raw);
 
     return {
       ...mapped,
-      notes: toNullableString(data?.notes),
-      website: toNullableString(data?.website),
-      createdAt: toString(data?.created_at ?? data?.createdAt ?? new Date().toISOString()),
-      updatedAt: toString(data?.updated_at ?? data?.updatedAt ?? new Date().toISOString()),
+      notes: toNullableString(raw?.notes),
+      website: toNullableString(raw?.website),
+      createdAt: toString(raw?.created_at ?? raw?.createdAt ?? new Date().toISOString()),
+      updatedAt: toString(raw?.updated_at ?? raw?.updatedAt ?? new Date().toISOString()),
     };
   },
 
   async getRecentSessions(limit = 5): Promise<OutreachSession[]> {
-    const data = await requestJson<any>(`/sessions?limit=${limit}`);
+    const data = await requestJson<any>(`/sessions?page=1&page_size=${limit}`);
     const rows = Array.isArray(data) ? data : data?.items ?? data?.sessions ?? [];
     return rows.map(mapSession);
   },
 
   async getSessionById(id: string): Promise<OutreachSessionDetail> {
     const data = await requestJson<any>(`/sessions/${id}`);
-    const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+    const raw = data?.session ?? data;
+    const tasks = Array.isArray(raw?.tasks) ? raw.tasks : [];
 
     return {
-      ...mapSession(data),
+      ...mapSession(raw),
       tasks: tasks.map((task: any) => ({
-        id: toString(task?.id),
+        id: toString(task?.task_id ?? task?.id),
         taskType: toString(task?.task_type ?? task?.taskType, 'task'),
         status: toString(task?.status, 'completed').toLowerCase() === 'failed'
           ? 'failed'
           : toString(task?.status, 'completed').toLowerCase() === 'running'
             ? 'running'
             : 'completed',
-        outputSummary: toString(task?.output_summary ?? task?.outputSummary, ''),
-        fullOutput: toString(task?.full_output ?? task?.fullOutput, ''),
+        outputSummary: toString(task?.summary ?? task?.output_summary ?? task?.outputSummary, ''),
+        fullOutput: toString(task?.output ? JSON.stringify(task.output) : task?.full_output ?? task?.fullOutput ?? ''),
       })),
     };
+  },
+
+  async runProspectResearch(count = 2, product: 'manifest' | 'onevine' = 'manifest', entity: 'claude' | 'sylana' = 'claude') {
+    return requestJson<any>('/sessions/run-prospect-research', {
+      method: 'POST',
+      body: JSON.stringify({ count, product, entity }),
+    });
   },
 };

@@ -555,7 +555,7 @@ export default function ChatScreen() {
           userMessage.text,
           currentPersonality,
           parsedThreadId || null,
-          activeTools.includes("health") ? (healthContextRef.current || undefined) : undefined,
+          activeTools.includes("health_data") ? (healthContextRef.current || undefined) : undefined,
           activeTools
         );
 

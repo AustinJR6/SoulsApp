@@ -12,11 +12,15 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { GitHubActivityFeed } from "../../components/GitHubActivityFeed";
+import { PhotoGallery } from "../../components/PhotoGallery";
 import { PERSONALITIES } from "../../constants/personalities";
 import { theme } from "../../constants/theme";
 import { usePersonality } from "../../contexts/PersonalityContext";
 import { storage } from "../../services/storage";
 import { ChatThread } from "../../types";
+
+type TabId = "threads" | "photos" | "github";
 
 type MemoryItem = {
   thread: ChatThread;
@@ -45,6 +49,7 @@ const buildTranscript = (thread: ChatThread) => {
 };
 
 export default function MemoriesScreen() {
+  const [activeTab, setActiveTab] = useState<TabId>("threads");
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const cardAnimations = useRef<Record<string, Animated.Value>>({}).current;
@@ -153,9 +158,43 @@ export default function MemoriesScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Memory Archive</Text>
-      <Text style={styles.subtitle}>Tap any saved thread to continue it in chat</Text>
+      <Text style={styles.subtitle}>Your conversations and shared photos</Text>
 
-      <FlatList
+      {/* ── Tab selector ── */}
+      <View style={styles.tabBar}>
+        {([
+          { id: "threads", label: "Chats" },
+          { id: "photos", label: "Photos" },
+          { id: "github", label: "GitHub" },
+        ] as { id: TabId; label: string }[]).map(({ id, label }) => (
+          <Pressable
+            key={id}
+            style={[styles.tab, activeTab === id && styles.tabActive]}
+            onPress={() => setActiveTab(id)}
+          >
+            <Text style={[styles.tabText, activeTab === id && styles.tabTextActive]}>
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* ── Photos tab ── full-bleed grid, break out of horizontal padding ── */}
+      {activeTab === "photos" && (
+        <View style={styles.fullBleedWrapper}>
+          <PhotoGallery />
+        </View>
+      )}
+
+      {/* ── GitHub tab ── */}
+      {activeTab === "github" && (
+        <View style={styles.fullBleedWrapper}>
+          <GitHubActivityFeed />
+        </View>
+      )}
+
+      {/* ── Threads tab ── */}
+      {activeTab === "threads" && <FlatList
         data={items}
         keyExtractor={(item) => item.thread.id}
         contentContainerStyle={items.length ? styles.listContent : styles.emptyContent}
@@ -219,7 +258,7 @@ export default function MemoriesScreen() {
             </Animated.View>
           );
         }}
-      />
+      />}
     </View>
   );
 }
@@ -240,7 +279,37 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colors.textSecondary,
     marginTop: 4,
+    marginBottom: 10,
+  },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 3,
     marginBottom: 14,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: "center",
+    borderRadius: 9,
+  },
+  tabActive: {
+    backgroundColor: theme.colors.accent,
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: theme.colors.textSecondary,
+  },
+  tabTextActive: {
+    color: "#fff",
+  },
+  fullBleedWrapper: {
+    flex: 1,
+    marginHorizontal: -16, // cancel parent horizontal padding so content is full-bleed
   },
   listContent: {
     paddingBottom: 20,
