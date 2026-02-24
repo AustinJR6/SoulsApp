@@ -32,6 +32,7 @@ import type { Photo } from "../../types/photo";
 const SYSTEM_USER_ID = 2;
 const USER = { _id: 1, name: "Elias" };
 const SIDEBAR_WIDTH = 292;
+const SESSION_ID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
 
 const getGreeting = (personality: Personality["id"]) =>
   personality === "sylana"
@@ -113,6 +114,25 @@ const truncateTitle = (text: string): string => {
     return "New chat";
   }
   return cleaned.length > 42 ? `${cleaned.slice(0, 42)}...` : cleaned;
+};
+
+const formatOutreachWorkflowResponse = (raw: string, activeTools: string[]): string => {
+  const text = (raw || "").trim();
+  if (!text) return raw;
+  const outreachActive = activeTools.includes("outreach") || activeTools.includes("work_sessions");
+  if (!outreachActive) return raw;
+
+  const match = text.match(SESSION_ID_REGEX);
+  if (!match) return raw;
+
+  const sessionId = match[0];
+  return [
+    "Outreach workflow started in the background.",
+    `session_id: ${sessionId}`,
+    `dashboard_path: /(tabs)/outreach/session/${sessionId}`,
+    "",
+    "Open Outreach > Session to review progress and generated drafts.",
+  ].join("\n");
 };
 
 export default function ChatScreen() {
@@ -561,7 +581,7 @@ export default function ChatScreen() {
 
         const aiMessage: IMessage = {
           _id: Math.random().toString(),
-          text: response.response,
+          text: formatOutreachWorkflowResponse(String(response.response || ""), activeTools),
           createdAt: new Date(),
           user: {
             _id: SYSTEM_USER_ID,

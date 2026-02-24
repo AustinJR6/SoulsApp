@@ -43,6 +43,7 @@ export default function OutreachDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<DashboardPayload>(defaultPayload);
+  const [runningWorkflow, setRunningWorkflow] = useState(false);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -101,6 +102,25 @@ export default function OutreachDashboardScreen() {
     [payload.summary, router]
   );
 
+  const runManifestWorkflow = useCallback(async () => {
+    setRunningWorkflow(true);
+    try {
+      const result = await outreachService.runProspectResearch(2, 'manifest', 'claude');
+      const sessionId =
+        (result?.session_id as string | undefined) ??
+        (result?.sessionId as string | undefined) ??
+        '';
+      await load();
+      if (sessionId) {
+        router.push(`/(tabs)/outreach/session/${sessionId}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start outreach workflow.');
+    } finally {
+      setRunningWorkflow(false);
+    }
+  }, [load, router]);
+
   return (
     <ScrollView
       style={styles.container}
@@ -109,6 +129,23 @@ export default function OutreachDashboardScreen() {
     >
       <Text style={styles.title}>Outreach</Text>
       <Text style={styles.subtitle}>Review and approve AI prospecting drafts for Manifest.</Text>
+      <Pressable
+        style={({ pressed }) => [styles.runWorkflowBtn, pressed && styles.runWorkflowBtnPressed, runningWorkflow && styles.runWorkflowBtnDisabled]}
+        onPress={runManifestWorkflow}
+        disabled={runningWorkflow}
+      >
+        <Ionicons name="rocket-outline" size={17} color="#ECFDF5" />
+        <Text style={styles.runWorkflowBtnText}>
+          {runningWorkflow ? 'Starting workflow...' : 'Run Manifest Workflow (2 prospects)'}
+        </Text>
+      </Pressable>
+      <View style={styles.workflowDocCard}>
+        <Text style={styles.workflowDocTitle}>Workflow Path</Text>
+        <Text style={styles.workflowDocText}>1. Run workflow</Text>
+        <Text style={styles.workflowDocText}>2. Review queue at Outreach {'>'} Draft Approval Queue</Text>
+        <Text style={styles.workflowDocText}>3. Approve/reject draft</Text>
+        <Text style={styles.workflowDocText}>4. Send draft and track opens/clicks</Text>
+      </View>
 
       {loading ? (
         <View style={styles.loadingWrap}>
@@ -231,6 +268,47 @@ const styles = StyleSheet.create({
     color: '#FEE2E2',
     fontWeight: '700',
     fontSize: 12,
+  },
+  runWorkflowBtn: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1D4ED8',
+    backgroundColor: '#2563EB',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  runWorkflowBtnPressed: {
+    opacity: 0.9,
+  },
+  runWorkflowBtnDisabled: {
+    opacity: 0.7,
+  },
+  runWorkflowBtnText: {
+    color: '#ECFDF5',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  workflowDocCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: 12,
+    gap: 4,
+  },
+  workflowDocTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  workflowDocText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
   },
   cardGrid: {
     flexDirection: 'row',
