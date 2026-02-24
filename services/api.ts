@@ -2,24 +2,33 @@ import axios from "axios";
 import { Platform } from "react-native";
 import { ChatResponse } from "../types";
 
-const resolveApiUrl = () => {
-  const rawUrl =
-    process.env.EXPO_PUBLIC_API_BASE_URL ||
-    process.env.EXPO_PUBLIC_API_URL ||
-    "https://sylana-vessel-11447506833.us-central1.run.app";
-  const normalizedUrl = rawUrl.replace(/\/+$/, "");
+const FALLBACK_API_URLS = [
+  "https://sylana-vessel-11447506833.us-central1.run.app",
+  "https://sylana-vessel-nx3bugauba-uc.a.run.app",
+];
 
-  if (Platform.OS !== "android") {
-    return normalizedUrl;
-  }
+const sanitizeBaseUrl = (value: string) =>
+  value.trim().replace(/^['"]+|['"]+$/g, "").replace(/\/+$/, "");
 
-  // Android emulator cannot reach host machine via localhost/127.0.0.1.
-  return normalizedUrl
-    .replace("://localhost", "://10.0.2.2")
-    .replace("://127.0.0.1", "://10.0.2.2");
+const resolveApiUrls = () => {
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.EXPO_PUBLIC_API_URL || "";
+  const candidates = [envUrl, ...FALLBACK_API_URLS]
+    .map((value) => sanitizeBaseUrl(value || ""))
+    .filter((value) => value.length > 0);
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  const normalizedUrls = uniqueCandidates.map((url) =>
+    Platform.OS === "android"
+      ? url.replace("://localhost", "://10.0.2.2").replace("://127.0.0.1", "://10.0.2.2")
+      : url
+  );
+
+  return normalizedUrls.length > 0 ? normalizedUrls : FALLBACK_API_URLS;
 };
 
-export const API_URL = resolveApiUrl();
+const API_BASE_CANDIDATES = resolveApiUrls();
+
+export const API_URL = API_BASE_CANDIDATES[0];
 
 const api = axios.create({
   baseURL: API_URL,
@@ -31,21 +40,31 @@ const api = axios.create({
 
 export const chatService = {
   health: async () => {
-    const response = await fetch(`${API_URL}/api/health`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
-    const text = await response.text();
+    let lastError: Error | null = null;
+    for (const base of API_BASE_CANDIDATES) {
+      try {
+        const response = await fetch(`${base}/api/health`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        });
+        const text = await response.text();
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from /api/health: ${text}`);
+        if (!response.ok) {
+          lastError = new Error(`HTTP ${response.status} from ${base}/api/health: ${text}`);
+          continue;
+        }
+
+        try {
+          return JSON.parse(text);
+        } catch {
+          lastError = new Error(`Invalid JSON from ${base}/api/health: ${text}`);
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error("Unable to reach backend.");
+      }
     }
 
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error(`Invalid JSON from /api/health: ${text}`);
-    }
+    throw lastError ?? new Error("Unable to reach backend.");
   },
 
   sendMessage: async (
@@ -152,7 +171,14 @@ export const chatService = {
   },
 
   updateConversationTools: async (conversationId: string | number, tools: string[]): Promise<void> => {
-    const response = await fetch(`${API_URL}/conversations/${conversationId}/tools`, {
+    const conversationIdText = String(conversationId ?? "").trim();
+    const numericConversationId = Number(conversationIdText);
+    if (!Number.isFinite(numericConversationId) || conversationIdText.startsWith("thread_")) {
+      // Local unsaved thread IDs do not map to backend conversation rows yet.
+      return;
+    }
+
+    const response = await fetch(`${API_URL}/conversations/${numericConversationId}/tools`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -163,7 +189,7 @@ export const chatService = {
 
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from /conversations/${conversationId}/tools: ${text}`);
+      throw new Error(`HTTP ${response.status} from /conversations/${numericConversationId}/tools: ${text}`);
     }
   },
 

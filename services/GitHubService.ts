@@ -12,7 +12,7 @@ const resolveApiUrl = () => {
     process.env.EXPO_PUBLIC_API_BASE_URL ||
     process.env.EXPO_PUBLIC_API_URL ||
     'https://sylana-vessel-11447506833.us-central1.run.app';
-  const url = raw.replace(/\/+$/, '');
+  const url = raw.trim().replace(/^['"]+|['"]+$/g, '').replace(/\/+$/, '');
   if (Platform.OS !== 'android') return url;
   return url
     .replace('://localhost', '://10.0.2.2')
