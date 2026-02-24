@@ -12,8 +12,8 @@
  * At least MIN_SAMPLES days of data must exist before alerts are generated
  * (avoids false positives on day 1).
  *
- * Writes new alerts to Supabase; also returns them so the UI can display
- * them immediately without a round-trip.
+ * Keeps only one active alert per metric by resolving previous active rows
+ * before writing the newest snapshot.
  */
 
 import { vitalsRepository } from './VitalsRepository';
@@ -64,8 +64,7 @@ export class AlertEngine {
    * Check every watched metric in `summary` against its 14-day baseline.
    * Writes fired alerts to Supabase and returns them.
    *
-   * Safe to call on every sync — the Supabase table has no unique constraint
-   * preventing duplicate alerts per day (intentional: each sync is a snapshot).
+   * Safe to call on every sync — older active alerts are resolved and replaced.
    */
   async checkAndAlert(
     userId: string,
@@ -89,7 +88,14 @@ export class AlertEngine {
       if (baseline.stddev === 0) continue;
 
       const deviations = Math.abs(value - baseline.mean) / baseline.stddev;
-      if (deviations < THRESHOLD) continue;
+      if (deviations < THRESHOLD) {
+        try {
+          await vitalsRepository.resolveAlert(metric);
+        } catch {
+          // ignore resolve failures when Supabase is unavailable
+        }
+        continue;
+      }
 
       const alertType: AlertType = value > baseline.mean ? 'high' : 'low';
       const severity = severityFor(deviations);
@@ -106,6 +112,8 @@ export class AlertEngine {
       };
 
       try {
+        // Replace any previously active alert for this metric.
+        await vitalsRepository.resolveAlert(metric);
         await vitalsRepository.createAlert(metric, alertType, value, baseline.mean, severity);
       } catch {
         // persist failure — still return in-memory alert so UI shows it

@@ -298,28 +298,16 @@ export class VitalsRepository {
     );
   }
 
-  /** Marks an alert resolved by its metric (resolves most-recent matching active alert). */
+  /** Marks all active alerts for a metric as resolved. */
   async resolveAlert(metric: MetricType): Promise<void> {
     const userId = await this.getUserId();
-
-    // Find the most recent unresolved alert for this metric
-    const { data, error: fetchError } = await supabase
-      .from('vitals_alerts')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('metric', metric)
-      .is('resolved_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (fetchError) throw new Error(`[VitalsRepository] resolveAlert fetch: ${fetchError.message}`);
-    if (!data) return;
 
     const { error: updateError } = await supabase
       .from('vitals_alerts')
       .update({ resolved_at: new Date().toISOString() })
-      .eq('id', data.id);
+      .eq('user_id', userId)
+      .eq('metric', metric)
+      .is('resolved_at', null);
 
     if (updateError) throw new Error(`[VitalsRepository] resolveAlert update: ${updateError.message}`);
   }
