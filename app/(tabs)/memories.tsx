@@ -12,11 +12,13 @@ import {
   View,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { IMessage } from "react-native-gifted-chat";
 import { GitHubActivityFeed } from "../../components/GitHubActivityFeed";
 import { PhotoGallery } from "../../components/PhotoGallery";
 import { PERSONALITIES } from "../../constants/personalities";
 import { theme } from "../../constants/theme";
 import { usePersonality } from "../../contexts/PersonalityContext";
+import { chatService } from "../../services/api";
 import { storage } from "../../services/storage";
 import { ChatThread } from "../../types";
 
@@ -25,6 +27,22 @@ type TabId = "threads" | "photos" | "github";
 type MemoryItem = {
   thread: ChatThread;
   projectName: string | null;
+};
+
+type BackendThreadRow = {
+  id: number;
+  title?: string;
+  updated_at?: string;
+  created_at?: string;
+  active_tools?: string[];
+};
+
+type BackendMessageRow = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  personality?: "sylana" | "claude";
+  created_at?: string;
 };
 
 const formatDate = (date: Date) =>
@@ -46,6 +64,45 @@ const buildTranscript = (thread: ChatThread) => {
     });
 
   return `Vessel transcript (${personalityName})\nThread: ${thread.title}\n\n${lines.join("\n\n")}`;
+};
+
+const toGiftedMessage = (message: BackendMessageRow): IMessage => ({
+  _id: `backend-msg-${message.id}`,
+  text: String(message.content || ""),
+  createdAt: new Date(message.created_at || Date.now()),
+  user: {
+    _id: message.role === "user" ? 1 : 2,
+    name:
+      message.role === "user"
+        ? "You"
+        : PERSONALITIES[(message.personality === "claude" ? "claude" : "sylana")].name,
+    avatar:
+      message.role === "user"
+        ? undefined
+        : PERSONALITIES[(message.personality === "claude" ? "claude" : "sylana")].avatar,
+  },
+});
+
+const normalizeBackendThread = (thread: BackendThreadRow, messages: BackendMessageRow[]): ChatThread => {
+  const assistant = messages.find((m) => m.role === "assistant" && (m.personality === "claude" || m.personality === "sylana"));
+  const personality = (assistant?.personality || "sylana") as "sylana" | "claude";
+  const giftedMessages = messages.map(toGiftedMessage).sort((a, b) => new Date(b.createdAt as Date).getTime() - new Date(a.createdAt as Date).getTime());
+  const firstUser = messages.find((m) => m.role === "user" && String(m.content || "").trim().length > 0);
+  const title = (thread.title || firstUser?.content || "Imported chat").trim();
+  const updatedAt = thread.updated_at || messages[0]?.created_at || new Date().toISOString();
+  const createdAt = thread.created_at || messages[messages.length - 1]?.created_at || updatedAt;
+
+  return {
+    id: `thread_backend_${thread.id}`,
+    personality,
+    title: title.length > 60 ? `${title.slice(0, 60)}...` : title,
+    projectId: null,
+    backendThreadId: String(thread.id),
+    tools: Array.isArray(thread.active_tools) && thread.active_tools.length > 0 ? thread.active_tools : ["memories", "web_search"],
+    createdAt,
+    updatedAt,
+    messages: giftedMessages,
+  };
 };
 
 export default function MemoriesScreen() {
@@ -80,8 +137,50 @@ export default function MemoriesScreen() {
     setIsRefreshing(true);
 
     try {
-      const workspace = await storage.getChatWorkspace();
+      let workspace = await storage.getChatWorkspace();
       const projectLookup = new Map(workspace.projects.map((project) => [project.id, project.name]));
+
+      // Backend-first memory source; local workspace is secondary cache.
+      try {
+        const remote = await chatService.getThreads() as { threads?: BackendThreadRow[] };
+        const threadRows = Array.isArray(remote?.threads) ? remote.threads : [];
+        const limitedRows = threadRows.slice(0, 40);
+
+        const remoteBundles = await Promise.all(
+          limitedRows.map(async (row) => {
+            try {
+              const payload = await chatService.getThreadMessages(row.id) as { messages?: BackendMessageRow[] };
+              const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+              return { row, messages };
+            } catch {
+              return { row, messages: [] as BackendMessageRow[] };
+            }
+          })
+        );
+
+        const mergedThreads = [...workspace.threads];
+        for (const bundle of remoteBundles) {
+          const normalized = normalizeBackendThread(bundle.row, bundle.messages);
+          const idx = mergedThreads.findIndex(
+            (t) => t.backendThreadId === normalized.backendThreadId || t.id === normalized.id
+          );
+          if (idx >= 0) {
+            mergedThreads[idx] = {
+              ...mergedThreads[idx],
+              ...normalized,
+              // Preserve existing local project assignment if present.
+              projectId: mergedThreads[idx].projectId ?? normalized.projectId,
+            };
+          } else {
+            mergedThreads.push(normalized);
+          }
+        }
+
+        workspace = { ...workspace, threads: mergedThreads };
+        await storage.setChatWorkspace(workspace);
+      } catch {
+        // Fall back to local-only when backend fetch fails.
+      }
 
       const next = workspace.threads
         .filter((thread) => thread.messages.length > 1)

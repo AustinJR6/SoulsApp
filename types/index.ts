@@ -23,7 +23,16 @@ export interface ChatResponse {
   response: string;
   personality: string;
   thread_id?: string | number;
-  emotion?: string;
+  emotion?:
+    | string
+    | {
+        valence?: number;
+        arousal?: number;
+        dominance?: number;
+        category?: string;
+        intensity?: number;
+        emotion?: string;
+      };
   [key: string]: unknown;
 }
 

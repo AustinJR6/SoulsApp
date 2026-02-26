@@ -1,4 +1,4 @@
-﻿import { API_URL } from './api';
+﻿import { requestJsonWithFailover } from './api';
 import type {
   DashboardPayload,
   EmailDraft,
@@ -9,8 +9,6 @@ import type {
   ProspectDetail,
   SessionStatus,
 } from '../types/outreach';
-
-const BASE_CANDIDATES = [`${API_URL}`];
 
 function toString(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return value;
@@ -39,32 +37,14 @@ function normalizeProspectStatus(value: unknown): OutreachStatus {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  let lastError: Error | null = null;
-
-  for (const base of BASE_CANDIDATES) {
-    const response = await fetch(`${base}${path}`, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...(init?.headers ?? {}),
-      },
-    });
-
-    const text = await response.text();
-    if (!response.ok) {
-      lastError = new Error(`HTTP ${response.status} from ${base}${path}: ${text}`);
-      continue;
-    }
-
-    try {
-      return (text ? JSON.parse(text) : {}) as T;
-    } catch {
-      throw new Error(`Invalid JSON from ${base}${path}: ${text}`);
-    }
-  }
-
-  throw lastError ?? new Error(`No outreach endpoint found for ${path}`);
+  return requestJsonWithFailover<T>(path, {
+    ...(init ?? {}),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
 }
 
 function mapSession(raw: any): OutreachSession {
@@ -274,3 +254,4 @@ export const outreachService = {
     });
   },
 };
+

@@ -150,8 +150,7 @@ export default function ChatScreen() {
   const { currentPersonality, personalityConfig, setPersonality } = usePersonality();
   const insets = useSafeAreaInsets();
 
-  // Health context — loaded once on mount, refreshed on each new thread.
-  // Stored in a ref so onSend always reads the latest value without re-rendering.
+  // Health context snapshot cache. Refreshed on send when health_data is active.
   const healthContextRef = useRef<string>('');
 
   useEffect(() => {
@@ -566,6 +565,17 @@ export default function ChatScreen() {
       setIsTyping(true);
 
       try {
+        let liveHealthContext: string | undefined;
+        if (activeTools.includes("health_data")) {
+          try {
+            const refreshed = await buildHealthContext();
+            healthContextRef.current = refreshed;
+            liveHealthContext = refreshed || undefined;
+          } catch {
+            liveHealthContext = healthContextRef.current || undefined;
+          }
+        }
+
         const parsedThreadId =
           backendThreadId && !Number.isNaN(Number(backendThreadId))
             ? Number(backendThreadId)
@@ -575,7 +585,7 @@ export default function ChatScreen() {
           userMessage.text,
           currentPersonality,
           parsedThreadId || null,
-          activeTools.includes("health_data") ? (healthContextRef.current || undefined) : undefined,
+          liveHealthContext,
           activeTools
         );
 

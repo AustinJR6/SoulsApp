@@ -7,6 +7,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon-key';
 
+const missingSupabaseEnv = !process.env.EXPO_PUBLIC_SUPABASE_URL || !process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+if (missingSupabaseEnv && !__DEV__) {
+  throw new Error(
+    '[Supabase] Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY in production build.'
+  );
+}
+
 if (!process.env.EXPO_PUBLIC_SUPABASE_URL) {
   console.warn('[Supabase] EXPO_PUBLIC_SUPABASE_URL not set — persistence disabled.');
 }
