@@ -204,6 +204,13 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen
+          name="live-voice"
+          options={{
+            headerShown: false,
+            presentation: "fullScreenModal",
+          }}
+        />
       </Stack>
     </PersonalityProvider>
   );

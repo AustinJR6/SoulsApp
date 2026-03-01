@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +27,7 @@ import { usePersonality } from "../../contexts/PersonalityContext";
 import { API_URL, chatService } from "../../services/api";
 import { buildHealthContext } from "../../services/VitalsContextService";
 import { storage } from "../../services/storage";
+import { stopAssistantVoice, transcribeRecordedAudio } from "../../services/voice";
 import { ChatProject, ChatThread, ChatWorkspace, Personality, ToolDescriptor } from "../../types";
 import type { Photo } from "../../types/photo";
 
@@ -143,12 +145,18 @@ export default function ChatScreen() {
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [isContextExpanded, setIsContextExpanded] = useState(false);
   const [availableTools, setAvailableTools] = useState<ToolDescriptor[]>(TOOL_CATALOG);
+  const [composerText, setComposerText] = useState("");
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [toolDefaultsByPersonality, setToolDefaultsByPersonality] = useState<Record<Personality["id"], string[]>>({
     sylana: [...DEFAULT_TOOL_IDS],
     claude: [...DEFAULT_TOOL_IDS],
   });
   const { currentPersonality, personalityConfig, setPersonality } = usePersonality();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
 
   // Health context snapshot cache. Refreshed on send when health_data is active.
   const healthContextRef = useRef<string>('');
@@ -276,6 +284,8 @@ export default function ChatScreen() {
       useNativeDriver: true,
     }).start();
   }, [isSidebarOpen, sidebarTranslateX]);
+
+  useEffect(() => () => stopAssistantVoice(), []);
 
   useEffect(() => {
     if (!workspace) {
@@ -527,16 +537,23 @@ export default function ChatScreen() {
     updateActiveThreadTools(preset.tools);
   }, [updateActiveThreadTools]);
 
-  const onSend = useCallback(
-    async (newMessages: IMessage[] = []) => {
-      const userMessage = newMessages[0];
-      if (!userMessage || !activeThread) {
+  const sendTextMessage = useCallback(
+    async (text: string) => {
+      const trimmedText = text.trim();
+      if (!trimmedText || !activeThread || isTyping) {
         return;
       }
 
+      const userMessage: IMessage = {
+        _id: `user-${Date.now()}`,
+        text: trimmedText,
+        createdAt: new Date(),
+        user: USER,
+      };
       const sendingThreadId = activeThread.id;
       const backendThreadId = activeThread.backendThreadId;
 
+      setComposerText("");
       setWorkspace((prev) => {
         if (!prev) {
           return prev;
@@ -550,7 +567,7 @@ export default function ChatScreen() {
             }
 
             const nextMessages = GiftedChat.append(thread.messages, [userMessage]);
-            const newTitle = thread.title === "New chat" ? truncateTitle(userMessage.text) : thread.title;
+            const newTitle = thread.title === "New chat" ? truncateTitle(trimmedText) : thread.title;
 
             return {
               ...thread,
@@ -582,16 +599,17 @@ export default function ChatScreen() {
             : backendThreadId;
 
         const response = await chatService.sendMessage(
-          userMessage.text,
+          trimmedText,
           currentPersonality,
           parsedThreadId || null,
           liveHealthContext,
           activeTools
         );
 
+        const replyText = formatOutreachWorkflowResponse(String(response.response || ""), activeTools);
         const aiMessage: IMessage = {
           _id: Math.random().toString(),
-          text: formatOutreachWorkflowResponse(String(response.response || ""), activeTools),
+          text: replyText,
           createdAt: new Date(),
           user: {
             _id: SYSTEM_USER_ID,
@@ -626,6 +644,7 @@ export default function ChatScreen() {
         chatService.updateConversationTools(nextConversationId, activeTools).catch(() => {
           // Best-effort sync only; local state is still persisted.
         });
+
       } catch (error) {
         let details = `Could not reach backend at ${API_URL}. Check API URL and network, then try again.`;
 
@@ -667,7 +686,91 @@ export default function ChatScreen() {
         setIsTyping(false);
       }
     },
-    [activeThread, activeTools, currentPersonality, personalityConfig.avatar, personalityConfig.name]
+    [
+      activeThread,
+      activeTools,
+      currentPersonality,
+      isTyping,
+      personalityConfig.avatar,
+      personalityConfig.name,
+    ]
+  );
+
+  const onSend = useCallback(
+    async (newMessages: IMessage[] = []) => {
+      const userMessage = newMessages[0];
+      if (!userMessage) {
+        return;
+      }
+      await sendTextMessage(String(userMessage.text || ""));
+    },
+    [sendTextMessage]
+  );
+
+  const startVoiceRecording = useCallback(async () => {
+    try {
+      stopAssistantVoice();
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        throw new Error("Microphone permission was denied");
+      }
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: "duckOthers",
+        shouldPlayInBackground: false,
+        allowsRecording: true,
+      });
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setIsRecordingVoice(true);
+    } catch (error) {
+      console.warn("Voice recording start failed", error);
+      setIsRecordingVoice(false);
+    }
+  }, [recorder]);
+
+  const stopVoiceRecording = useCallback(
+    async () => {
+      if (!isRecordingVoice) {
+        return;
+      }
+
+      try {
+        await recorder.stop();
+      } catch (error) {
+        console.warn("Voice recording stop failed", error);
+      } finally {
+        setIsRecordingVoice(false);
+      }
+
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        interruptionMode: "duckOthers",
+        shouldPlayInBackground: false,
+        allowsRecording: false,
+      });
+
+      const uri = recorder.uri || recorder.getStatus().url;
+      if (!uri) {
+        return;
+      }
+
+      try {
+        setIsTranscribingVoice(true);
+        const result = await transcribeRecordedAudio(uri, currentPersonality);
+        const transcript = String(result.text || "").trim();
+        if (!transcript) {
+          return;
+        }
+
+        setComposerText((prev) => (prev.trim().length ? `${prev.trimEnd()} ${transcript}` : transcript));
+      } catch (error) {
+        console.warn("Voice transcription failed", error);
+      } finally {
+        setIsTranscribingVoice(false);
+      }
+    },
+    [currentPersonality, isRecordingVoice, recorder]
   );
 
   /** Called by PhotoPicker after a successful upload — inserts an image bubble. */
@@ -717,6 +820,11 @@ export default function ChatScreen() {
 
   const projects = workspace.projects;
   const ungroupedThreads = threadsForCurrentPersonality.filter((thread) => !thread.projectId);
+  const voiceStatusLabel = isTranscribingVoice
+    ? "Transcribing your voice..."
+    : isRecordingVoice
+      ? `Listening... ${Math.floor((recorderState.durationMillis || 0) / 1000)}s`
+      : "Tap the mic to dictate, or open a realtime voice call.";
 
   return (
     <Animated.View
@@ -758,28 +866,101 @@ export default function ChatScreen() {
         onPresetSelect={handleApplyPreset}
       />
 
+      <View style={styles.voiceTray}>
+        <View style={styles.voiceStatusPill}>
+          <Ionicons
+            name={isRecordingVoice ? "radio" : "mic-outline"}
+            size={14}
+            color={theme.colors.textSecondary}
+          />
+          <Text style={styles.voiceStatusText}>{voiceStatusLabel}</Text>
+        </View>
+        <Pressable
+          style={styles.liveVoiceToggle}
+          onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
+        >
+          <Ionicons
+            name="headset-outline"
+            size={16}
+            color={theme.colors.textSecondary}
+          />
+          <Text style={styles.liveVoiceToggleText}>Call</Text>
+        </Pressable>
+      </View>
+
       <GiftedChat<IMessage>
         messages={messages}
         onSend={onSend}
         user={USER}
         isTyping={isTyping}
+        text={composerText}
+        isSendButtonAlwaysVisible
         textInputProps={{
           placeholder: "Message Vessel...",
           placeholderTextColor: theme.colors.textMuted,
           style: styles.input,
           selectionColor: theme.colors.accent,
           contextMenuHidden: false,
+          editable: !isTranscribingVoice,
+          onChangeText: setComposerText,
         }}
         messagesContainerStyle={styles.messageList}
         renderBubble={(props) => <ChatMessage {...props} />}
         renderFooter={() => (isTyping ? <TypingIndicator /> : null)}
-        renderActions={() =>
-          activeTools.includes("photos") ? (
-            <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
-              <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
+        renderActions={() => (
+          <View style={styles.composerActionRow}>
+            {activeTools.includes("photos") ? (
+              <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
+                <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              style={styles.liveComposerBtn}
+              onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
+            >
+              <Ionicons
+                name="headset-outline"
+                size={18}
+                color={theme.colors.textSecondary}
+              />
             </Pressable>
-          ) : null
-        }
+          </View>
+        )}
+        renderSend={() => {
+          const canSend = composerText.trim().length > 0 && !isTyping && !isTranscribingVoice;
+          return (
+            <View style={styles.sendCluster}>
+              <Pressable
+                style={[
+                  styles.voiceRecordBtn,
+                  isRecordingVoice && styles.voiceRecordBtnActive,
+                  isTranscribingVoice && styles.voiceRecordBtnDisabled,
+                ]}
+                disabled={isTranscribingVoice || isTyping}
+                onPress={() => (isRecordingVoice ? stopVoiceRecording() : startVoiceRecording())}
+              >
+                <Ionicons
+                  name={
+                    isTranscribingVoice
+                      ? "hourglass-outline"
+                      : isRecordingVoice
+                        ? "stop-circle-outline"
+                        : "mic-outline"
+                  }
+                  size={20}
+                  color={theme.colors.textPrimary}
+                />
+              </Pressable>
+              <Pressable
+                style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+                disabled={!canSend}
+                onPress={() => sendTextMessage(composerText)}
+              >
+                <Ionicons name="arrow-up" size={18} color={theme.colors.textPrimary} />
+              </Pressable>
+            </View>
+          );
+        }}
       />
 
       <PhotoPicker
@@ -945,6 +1126,58 @@ const styles = StyleSheet.create({
   messageList: {
     backgroundColor: "transparent",
   },
+  voiceTray: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  voiceStatusPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  voiceStatusText: {
+    flex: 1,
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  liveVoiceToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  liveVoiceToggleActive: {
+    backgroundColor: "rgba(168,85,247,0.24)",
+    borderColor: theme.colors.accent,
+  },
+  liveVoiceToggleText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  liveVoiceToggleTextActive: {
+    color: theme.colors.textPrimary,
+  },
+  composerActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   cameraBtn: {
     width: 36,
     height: 36,
@@ -952,6 +1185,56 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 4,
     marginLeft: 6,
+  },
+  liveComposerBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  liveComposerBtnActive: {
+    backgroundColor: "rgba(168,85,247,0.24)",
+    borderColor: theme.colors.accent,
+  },
+  sendCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginRight: 10,
+    marginBottom: 6,
+  },
+  voiceRecordBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  voiceRecordBtnActive: {
+    backgroundColor: theme.colors.danger,
+    borderColor: theme.colors.danger,
+  },
+  voiceRecordBtnDisabled: {
+    opacity: 0.55,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.accent,
+  },
+  sendBtnDisabled: {
+    opacity: 0.35,
   },
   input: {
     color: theme.colors.textPrimary,

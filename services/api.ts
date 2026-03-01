@@ -29,6 +29,10 @@ const API_BASE_CANDIDATES = resolveApiUrls();
 let activeApiUrl = API_BASE_CANDIDATES[0];
 export const API_URL = API_BASE_CANDIDATES[0];
 export const getActiveApiUrl = () => activeApiUrl;
+export const resolveApiUrl = (path: string) => {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${activeApiUrl}${normalizedPath}`;
+};
 
 const defaultHeaders = {
   "Content-Type": "application/json",
@@ -44,10 +48,11 @@ export async function requestWithFailover(
 
   for (const base of API_BASE_CANDIDATES) {
     try {
+      const isMultipart = typeof FormData !== "undefined" && init.body instanceof FormData;
       const response = await fetch(`${base}${path}`, {
         ...init,
         headers: {
-          ...defaultHeaders,
+          ...(isMultipart ? { Accept: defaultHeaders.Accept } : defaultHeaders),
           ...(init.headers ?? {}),
         },
       });

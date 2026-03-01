@@ -55,6 +55,19 @@
           "icon": "./assets/icon.png",
           "color": "#a855f7"
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Vessel uses your microphone so you can dictate messages and talk in live voice mode."
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Vessel can use your camera for future video calling features.",
+          "microphonePermission": "Vessel uses your microphone for realtime live voice sessions."
+        }
       ]
     ],
     "extra": {
