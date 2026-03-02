@@ -8,7 +8,7 @@ android {
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.lysara.vessel.wear"
+        applicationId "com.lysara.vessel"
         minSdk 30
         targetSdk 36
         versionCode 1
@@ -28,6 +28,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    lint {
+        disable "WearableBindListener"
     }
 }
 
