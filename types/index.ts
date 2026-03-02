@@ -71,3 +71,33 @@ export interface ToolDescriptor {
   id: string;
   label: string;
 }
+
+export interface AlertTopic {
+  topic_id: string;
+  label: string;
+  query: string;
+  enabled: boolean;
+  interval_minutes: number;
+  severity_floor: "info" | "warning" | "critical";
+  metadata?: Record<string, unknown>;
+  last_checked_at?: string | null;
+  last_alerted_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface AlertEvent {
+  event_id: string;
+  topic_id: string;
+  topic_label: string;
+  severity: "info" | "warning" | "critical";
+  score: number;
+  title: string;
+  summary: string;
+  result_count: number;
+  search_payload?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  pushed_at?: string | null;
+  acknowledged_at?: string | null;
+  created_at?: string | null;
+}

@@ -67,6 +67,14 @@ function isDraftAlertResponse(response: Notifications.NotificationResponse): boo
   );
 }
 
+function isTopicAlertResponse(response: Notifications.NotificationResponse): boolean {
+  const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+  const type = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
+  const screen = typeof data?.screen === 'string' ? data.screen.toLowerCase() : '';
+  const route = typeof data?.route === 'string' ? data.route.toLowerCase() : '';
+  return type === 'topic_alert' || screen === 'alerts' || route.includes('/alerts');
+}
+
 function useOutreachNotificationRouting() {
   const router = useRouter();
 
@@ -74,6 +82,10 @@ function useOutreachNotificationRouting() {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       if (isDraftAlertResponse(response)) {
         router.push('/(tabs)/outreach/queue');
+        return;
+      }
+      if (isTopicAlertResponse(response)) {
+        router.push('/(tabs)/alerts');
       }
     });
 
@@ -81,6 +93,10 @@ function useOutreachNotificationRouting() {
       .then((response) => {
         if (response && isDraftAlertResponse(response)) {
           router.push('/(tabs)/outreach/queue');
+          return;
+        }
+        if (response && isTopicAlertResponse(response)) {
+          router.push('/(tabs)/alerts');
         }
       })
       .catch(() => {

@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { requestRecordingPermissionsAsync } from "expo-audio";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { PERSONALITIES } from "../constants/personalities";
 import { theme } from "../constants/theme";
 import { usePersonality } from "../contexts/PersonalityContext";
+import { ensureMicrophonePermission } from "../services/microphone";
 import { RealtimeTranscriptEntry, RealtimeVoiceClient } from "../services/realtimeVoice";
 
 type PersonalityId = "sylana" | "claude";
@@ -36,16 +36,11 @@ export default function LiveVoiceScreen() {
     let cancelled = false;
 
     async function startSession() {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
+      const granted = await ensureMicrophonePermission({ featureLabel: "live voice" });
+      if (!granted) {
         if (cancelled) return;
         setCallState("failed");
         setStatusText("Microphone access is required for live voice.");
-        Alert.alert(
-          "Microphone Required",
-          "Please allow microphone access in your device Settings to use Live Voice.",
-          [{ text: "OK" }]
-        );
         return;
       }
       if (cancelled) return;
@@ -104,15 +99,10 @@ export default function LiveVoiceScreen() {
     setStatusText("Reconnecting...");
 
     async function doReconnect() {
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
+      const granted = await ensureMicrophonePermission({ featureLabel: "live voice" });
+      if (!granted) {
         setCallState("failed");
         setStatusText("Microphone access is required for live voice.");
-        Alert.alert(
-          "Microphone Required",
-          "Please allow microphone access in your device Settings to use Live Voice.",
-          [{ text: "OK" }]
-        );
         return;
       }
 

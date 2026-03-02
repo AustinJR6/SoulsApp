@@ -41,6 +41,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="alerts"
+        options={{
+          title: "Alerts",
+          tabBarIcon: ({ color, size }) => <Ionicons name="warning-outline" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="vitals"
         options={{
           title: "Vitals",

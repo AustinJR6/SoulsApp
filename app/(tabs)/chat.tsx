@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import { RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -26,6 +26,7 @@ import { DEFAULT_TOOL_IDS, mergeAvailableTools, sanitizeTools, TOOL_CATALOG, TOO
 import { theme } from "../../constants/theme";
 import { usePersonality } from "../../contexts/PersonalityContext";
 import { API_URL, chatService } from "../../services/api";
+import { ensureMicrophonePermission } from "../../services/microphone";
 import { buildHealthContext } from "../../services/VitalsContextService";
 import { storage } from "../../services/storage";
 import { stopAssistantVoice, transcribeRecordedAudio } from "../../services/voice";
@@ -711,8 +712,8 @@ export default function ChatScreen() {
   const startVoiceRecording = useCallback(async () => {
     try {
       stopAssistantVoice();
-      const permission = await requestRecordingPermissionsAsync();
-      if (!permission.granted) {
+      const granted = await ensureMicrophonePermission({ featureLabel: "voice dictation" });
+      if (!granted) {
         throw new Error("Microphone permission was denied");
       }
       await setAudioModeAsync({
