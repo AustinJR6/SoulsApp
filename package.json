@@ -13,6 +13,7 @@
     "test:haptic": "npx uri-scheme open \"sylanavessel:///(tabs)/presence?test=haptic\" --android",
     "build:development:android": "npx eas build --platform android --profile development",
     "build:preview:android": "npx eas build --platform android --profile preview",
+    "build:preview:android:wear": "npx eas build --platform android --profile preview_wear",
     "build:production:android": "npx eas build --platform android --profile production"
   },
   "dependencies": {

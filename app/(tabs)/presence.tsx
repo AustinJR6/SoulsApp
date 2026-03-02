@@ -1,14 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import SylanaAvatar from "../../components/SylanaAvatar";
 import { theme } from "../../constants/theme";
 import { usePresence } from "../../contexts/PresenceContext";
 import { pingHeart } from "../../services/presenceHaptics";
 import { presenceService } from "../../services/PresenceService";
 import { clearVoiceCache, preloadCommonPhrases, speak, stopSpeaking } from "../../services/presenceVoice";
-import { getWearConnectionStatus, sendPresenceEventToWear } from "../../services/native/WearPresence";
+import {
+  getWearConnectionStatus,
+  sendPresenceEventToWear,
+  WearConnectionStatus,
+} from "../../services/native/WearPresence";
 import { PresenceLog } from "../../types/presence";
 
 function formatDate(value: string) {
@@ -20,7 +24,12 @@ export default function PresenceScreen() {
   const { state } = usePresence();
   const [logs, setLogs] = useState<PresenceLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [wearStatus, setWearStatus] = useState<{ connected: boolean; nodes: number }>({ connected: false, nodes: 0 });
+  const [wearStatus, setWearStatus] = useState<WearConnectionStatus>({
+    connected: false,
+    nodes: 0,
+    embeddedApp: false,
+    nodeDetails: [],
+  });
   const [avatarDemoTalking, setAvatarDemoTalking] = useState(false);
   const testMode = Array.isArray(params.test) ? params.test[0] : params.test;
 
@@ -85,9 +94,37 @@ export default function PresenceScreen() {
       severity: "heart",
       timestamp: new Date().toISOString(),
       summary: "Presence test pulse",
+      route: "/(tabs)/presence",
     });
     const nextWear = await getWearConnectionStatus();
     setWearStatus(nextWear);
+  };
+
+  const showWatchInstallGuide = () => {
+    const installNote = wearStatus.embeddedApp
+      ? "This build includes the watch companion. Open the Play Store on the watch from the phone-side install prompt or install it from the paired device app list."
+      : "This build does not bundle the watch companion. Use the wear-enabled preview build profile next.";
+    Alert.alert(
+      "Connect Your Watch",
+      [
+        "1. Pair the Wear OS watch to this phone in the Wear OS app or Android device settings.",
+        "2. Install the Vessel Wear companion on the watch.",
+        "3. Open Vessel on the phone and tap Refresh Watch Status.",
+        "4. Tap Send Wear Test Event to confirm the watch vibrates.",
+        installNote,
+      ].join("\n\n")
+    );
+  };
+
+  const openWearOsSetup = async () => {
+    const url = "market://details?id=com.google.android.wearable.app";
+    const webUrl = "https://play.google.com/store/apps/details?id=com.google.android.wearable.app";
+    try {
+      const canOpenMarket = await Linking.canOpenURL(url);
+      await Linking.openURL(canOpenMarket ? url : webUrl);
+    } catch {
+      Alert.alert("Wear OS Setup", "Open the Play Store and install the Wear OS app, then pair your watch to this phone.");
+    }
   };
 
   const runNightlyNow = async () => {
@@ -137,7 +174,31 @@ export default function PresenceScreen() {
 
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Haptics + Wear</Text>
-        <Text style={styles.helperText}>Wear connected: {wearStatus.connected ? "yes" : "no"} | nodes: {wearStatus.nodes}</Text>
+        <View style={styles.watchHeaderRow}>
+          <View style={[styles.statusChip, wearStatus.connected ? styles.statusChipConnected : styles.statusChipIdle]}>
+            <Text style={styles.statusChipText}>{wearStatus.connected ? "Watch Connected" : "Watch Not Connected"}</Text>
+          </View>
+          <Text style={styles.helperText}>Nodes: {wearStatus.nodes}</Text>
+        </View>
+        <Text style={styles.helperText}>
+          {wearStatus.embeddedApp
+            ? "This build includes the Wear companion."
+            : "This phone build does not include the Wear companion. Use the wear-enabled preview build to install it."}
+        </Text>
+        {wearStatus.nodeDetails.length > 0 ? (
+          <View style={styles.nodeList}>
+            {wearStatus.nodeDetails.map((node) => (
+              <View key={node.id} style={styles.nodeCard}>
+                <Text style={styles.nodeName}>{node.displayName}</Text>
+                <Text style={styles.nodeMeta}>{node.nearby ? "Nearby" : "Cloud-connected"} | {node.id.slice(0, 8)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.helperText}>
+            Pair the watch in Wear OS first, then refresh status here. Once connected, the paired watch appears in this list.
+          </Text>
+        )}
         <View style={styles.buttonRow}>
           <Pressable style={styles.primaryButton} onPress={() => void pingHeart("heart")}>
             <Text style={styles.primaryButtonText}>Heart Ping</Text>
@@ -146,9 +207,20 @@ export default function PresenceScreen() {
             <Text style={styles.primaryButtonText}>Critical Ping</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.secondaryButtonWide} onPress={() => void sendWearTest()}>
-          <Text style={styles.secondaryButtonText}>Send Wear Test Event</Text>
-        </Pressable>
+        <View style={styles.buttonColumn}>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void loadData()}>
+            <Text style={styles.secondaryButtonText}>Refresh Watch Status</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void sendWearTest()}>
+            <Text style={styles.secondaryButtonText}>Send Wear Test Event</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void showWatchInstallGuide()}>
+            <Text style={styles.secondaryButtonText}>Show Connect Steps</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void openWearOsSetup()}>
+            <Text style={styles.secondaryButtonText}>Open Wear OS Setup</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.panel}>
@@ -227,6 +299,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  buttonColumn: {
+    gap: 10,
+  },
   primaryButton: {
     flex: 1,
     flexDirection: "row",
@@ -263,6 +338,47 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: theme.colors.textSecondary,
     fontWeight: "700",
+  },
+  watchHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  statusChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  statusChipConnected: {
+    backgroundColor: "rgba(72, 187, 120, 0.18)",
+  },
+  statusChipIdle: {
+    backgroundColor: "rgba(255, 179, 71, 0.18)",
+  },
+  statusChipText: {
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  nodeList: {
+    gap: 10,
+  },
+  nodeCard: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 4,
+  },
+  nodeName: {
+    color: theme.colors.textPrimary,
+    fontWeight: "800",
+  },
+  nodeMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
   },
   logCard: {
     padding: 14,
