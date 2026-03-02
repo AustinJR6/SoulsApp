@@ -57,6 +57,12 @@ function withKotlinVersion(config) {
 
 const HC_LIBRARY = 'androidx.health.connect.client';
 
+// Mic/audio permissions — expo-audio plugin doesn't reliably inject these on Android.
+const APP_AUDIO_PERMISSIONS = [
+  'android.permission.RECORD_AUDIO',
+  'android.permission.MODIFY_AUDIO_SETTINGS',
+];
+
 // Every record type we request in HealthService.ts must be declared here.
 const HC_PERMISSIONS = [
   'android.permission.health.READ_HEART_RATE',
@@ -97,10 +103,27 @@ function withHealthConnectManifest(config) {
       console.log('[withHealthConnectFix] Added tools:overrideLibrary for', HC_LIBRARY);
     }
 
-    // — Fix 3a: Health Connect permission declarations ————————————————————
+    // — App audio permissions (mic) — injected directly because expo-audio plugin
+    //   does not reliably add RECORD_AUDIO to the Android manifest in all versions.
     const existingPerms = new Set(
       (manifest['uses-permission'] ?? []).map((p) => p.$?.['android:name'] ?? '')
     );
+    let addedAudioPerms = 0;
+    for (const perm of APP_AUDIO_PERMISSIONS) {
+      if (!existingPerms.has(perm)) {
+        manifest['uses-permission'] = [
+          ...(manifest['uses-permission'] ?? []),
+          { $: { 'android:name': perm } },
+        ];
+        existingPerms.add(perm);
+        addedAudioPerms++;
+      }
+    }
+    if (addedAudioPerms > 0) {
+      console.log(`[withHealthConnectFix] Added ${addedAudioPerms} audio permission(s): RECORD_AUDIO, MODIFY_AUDIO_SETTINGS`);
+    }
+
+    // — Fix 3a: Health Connect permission declarations ————————————————————
     let addedPerms = 0;
     for (const perm of HC_PERMISSIONS) {
       if (!existingPerms.has(perm)) {
