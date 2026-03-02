@@ -3,6 +3,12 @@ plugins {
     id "org.jetbrains.kotlin.android"
 }
 
+ext.REACT_NATIVE_NODE_MODULES_DIR = new File(rootDir, "../node_modules/react-native")
+ext.REACT_NATIVE_WORKLETS_NODE_MODULES_DIR = new File(rootDir, "../node_modules/react-native-worklets")
+ext.isReanimatedExampleApp = false
+ext.workletsBundleMode = false
+ext.enableReanimatedProfiling = false
+
 android {
     namespace "com.lysara.vessel.wear"
     compileSdk 36

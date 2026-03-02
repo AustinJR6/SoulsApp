@@ -3,6 +3,13 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+def includeWearApp = System.getenv("ENABLE_WEAR_APP") == "1" || (findProperty("enableWearApp") ?: "false").toBoolean()
+
+project.ext.REACT_NATIVE_NODE_MODULES_DIR = new File(rootProject.projectDir, "../node_modules/react-native")
+project.ext.REACT_NATIVE_WORKLETS_NODE_MODULES_DIR = new File(rootProject.projectDir, "../node_modules/react-native-worklets")
+project.ext.isReanimatedExampleApp = false
+project.ext.workletsBundleMode = false
+project.ext.enableReanimatedProfiling = false
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -156,7 +163,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
-    wearApp(project(":wear"))
+    if (includeWearApp) {
+        wearApp(project(":wear"))
+    }
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";

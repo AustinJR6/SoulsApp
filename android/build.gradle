@@ -1,5 +1,11 @@
 // Kotlin version override for react-native-health-connect compatibility
 ext.kotlinVersion = "2.1.20"
+ext.REACT_NATIVE_NODE_MODULES_DIR = new File(rootDir, "../node_modules/react-native")
+ext.REACT_NATIVE_WORKLETS_NODE_MODULES_DIR = new File(rootDir, "../node_modules/react-native-worklets")
+ext.isReanimatedExampleApp = false
+ext.workletsBundleMode = false
+ext.enableReanimatedProfiling = false
+ext.isGHExampleApp = false
 
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 

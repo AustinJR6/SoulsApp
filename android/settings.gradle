@@ -36,5 +36,8 @@ rootProject.name = 'Sylana Vessel'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
-include ':wear'
+def includeWearApp = System.getenv("ENABLE_WEAR_APP") == "1" || gradle.startParameter.projectProperties.get("enableWearApp") == "true"
+if (includeWearApp) {
+  include ':wear'
+}
 includeBuild(expoAutolinking.reactNativeGradlePlugin)
