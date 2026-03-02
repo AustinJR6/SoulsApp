@@ -4,6 +4,7 @@ import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -726,6 +727,8 @@ export default function ChatScreen() {
     } catch (error) {
       console.warn("Voice recording start failed", error);
       setIsRecordingVoice(false);
+      const msg = error instanceof Error ? error.message : "Could not start recording";
+      Alert.alert("Mic Error", msg);
     }
   }, [recorder]);
 
@@ -766,6 +769,7 @@ export default function ChatScreen() {
         setComposerText((prev) => (prev.trim().length ? `${prev.trimEnd()} ${transcript}` : transcript));
       } catch (error) {
         console.warn("Voice transcription failed", error);
+        Alert.alert("Transcription Failed", "Could not convert your voice to text. Please try again.");
       } finally {
         setIsTranscribingVoice(false);
       }
@@ -877,10 +881,12 @@ export default function ChatScreen() {
         </View>
         <Pressable
           style={styles.liveVoiceButton}
+          accessibilityLabel="Start live voice call"
+          accessibilityRole="button"
           onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
         >
           <Ionicons name="headset-outline" size={18} color={theme.colors.textPrimary} />
-          <Text style={styles.liveVoiceButtonText}>Start Live Voice</Text>
+          <Text style={styles.liveVoiceButtonText}>Live Voice</Text>
         </Pressable>
       </View>
 
@@ -923,6 +929,10 @@ export default function ChatScreen() {
                   isTranscribingVoice && styles.voiceRecordBtnDisabled,
                 ]}
                 disabled={isTranscribingVoice || isTyping}
+                accessibilityLabel={
+                  isTranscribingVoice ? "Converting voice to text" : isRecordingVoice ? "Stop recording" : "Record voice message"
+                }
+                accessibilityRole="button"
                 onPress={() => (isRecordingVoice ? stopVoiceRecording() : startVoiceRecording())}
               >
                 <Ionicons
@@ -940,6 +950,8 @@ export default function ChatScreen() {
               <Pressable
                 style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
                 disabled={!canSend}
+                accessibilityLabel="Send message"
+                accessibilityRole="button"
                 onPress={() => sendTextMessage(composerText)}
               >
                 <Ionicons name="arrow-up" size={18} color={theme.colors.textPrimary} />
@@ -1113,6 +1125,9 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   voiceBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 14,
     paddingBottom: 8,
     gap: 10,
