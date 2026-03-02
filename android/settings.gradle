@@ -1,3 +1,5 @@
+import groovy.json.JsonSlurper
+
 pluginManagement {
   def reactNativeGradlePlugin = new File(
     providers.exec {
@@ -36,6 +38,39 @@ rootProject.name = 'Sylana Vessel'
 expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
+
+def sanitizeAutolinkProjectName(String dependencyName) {
+  dependencyName.replace("@", "").replace("/", "_")
+}
+
+def wireAutolinkedReactNativeProjects() {
+  def autolinkingFile = file("build/generated/autolinking/autolinking.json")
+  if (!autolinkingFile.exists()) {
+    return
+  }
+
+  def autolinking = new JsonSlurper().parse(autolinkingFile)
+  autolinking.dependencies.each { dependencyName, dependencyConfig ->
+    if (dependencyName == "expo" || dependencyName.startsWith("expo-")) {
+      return
+    }
+
+    def androidConfig = dependencyConfig?.platforms?.android
+    def sourceDir = androidConfig?.sourceDir
+    if (!sourceDir) {
+      return
+    }
+
+    def projectName = ":${sanitizeAutolinkProjectName(dependencyName)}"
+    if (findProject(projectName) == null) {
+      include(projectName)
+    }
+    project(projectName).projectDir = file(sourceDir)
+  }
+}
+
+wireAutolinkedReactNativeProjects()
+
 def includeWearApp = System.getenv("ENABLE_WEAR_APP") == "1" || gradle.startParameter.projectProperties.get("enableWearApp") == "true"
 if (includeWearApp) {
   include ':wear'
