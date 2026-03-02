@@ -29,7 +29,6 @@
       },
       "edgeToEdgeEnabled": false,
       "package": "com.lysara.vessel",
-      "minSdkVersion": 26,
       "permissions": [
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
@@ -53,11 +52,18 @@
         }
       ],
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Vessel accesses your photo library so you can share moments in chat.",
-          "cameraPermission": "Vessel uses your camera so you can capture and share photos in chat.",
-          "microphonePermission": false
+          "cameraPermission": "Vessel uses your camera so you can capture and share photos in chat."
         }
       ],
       [
@@ -79,7 +85,9 @@
           "cameraPermission": "Vessel can use your camera for future video calling features.",
           "microphonePermission": "Vessel uses your microphone for realtime live voice sessions."
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-build-properties"
     ],
     "extra": {
       "router": {},

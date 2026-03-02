@@ -1,13 +1,72 @@
-import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PERSONALITIES } from "../../constants/personalities";
 import { theme } from "../../constants/theme";
+import {
+  ensureMicrophonePermission,
+  getMicrophonePermissionSnapshot,
+  openAppSettings,
+} from "../../services/microphone";
 
 export default function SettingsScreen() {
+  const [micStatus, setMicStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
+  const [canAskAgain, setCanAskAgain] = useState(true);
+
+  const refreshMicrophoneStatus = useCallback(async () => {
+    try {
+      const permission = await getMicrophonePermissionSnapshot();
+      setMicStatus(permission.granted ? "granted" : permission.status === "denied" ? "denied" : "undetermined");
+      setCanAskAgain(permission.canAskAgain);
+    } catch {
+      setMicStatus("undetermined");
+      setCanAskAgain(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMicrophoneStatus().catch(() => {});
+  }, [refreshMicrophoneStatus]);
+
+  const requestMicrophone = useCallback(async () => {
+    await ensureMicrophonePermission({ featureLabel: "voice dictation and live voice" });
+    await refreshMicrophoneStatus();
+  }, [refreshMicrophoneStatus]);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>System Settings</Text>
-      <Text style={styles.subtitle}>More controls can be added here next.</Text>
+      <Text style={styles.subtitle}>Permission health and personality controls live here.</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Microphone</Text>
+        <Text style={styles.permissionText}>
+          Status:{" "}
+          <Text
+            style={[
+              styles.permissionValue,
+              micStatus === "granted"
+                ? styles.permissionGranted
+                : micStatus === "denied"
+                  ? styles.permissionDenied
+                  : styles.permissionUnknown,
+            ]}
+          >
+            {micStatus}
+          </Text>
+        </Text>
+        <Text style={styles.helperText}>
+          If the app does not prompt, Android may have cached a denial. Use the button below to request again or jump
+          straight to system settings.
+        </Text>
+        <View style={styles.actionRow}>
+          <Pressable style={styles.primaryButton} onPress={() => void requestMicrophone()}>
+            <Text style={styles.primaryButtonText}>{canAskAgain ? "Request Microphone" : "Review Permission"}</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButton} onPress={() => void openAppSettings()}>
+            <Text style={styles.secondaryButtonText}>Open Settings</Text>
+          </Pressable>
+        </View>
+      </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Personalities</Text>
@@ -56,6 +115,60 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontWeight: "700",
     fontSize: 15,
+  },
+  permissionText: {
+    color: theme.colors.textSecondary,
+    fontSize: 14,
+  },
+  permissionValue: {
+    fontWeight: "800",
+    textTransform: "capitalize",
+  },
+  permissionGranted: {
+    color: "#7dd3fc",
+  },
+  permissionDenied: {
+    color: theme.colors.danger,
+  },
+  permissionUnknown: {
+    color: "#ffb347",
+  },
+  helperText: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  primaryButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: theme.colors.accent,
+  },
+  primaryButtonText: {
+    color: theme.colors.textPrimary,
+    fontWeight: "800",
+    fontSize: 13,
+  },
+  secondaryButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+  },
+  secondaryButtonText: {
+    color: theme.colors.textSecondary,
+    fontWeight: "700",
+    fontSize: 13,
   },
   row: {
     flexDirection: "row",

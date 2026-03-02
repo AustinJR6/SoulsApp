@@ -2,8 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import SylanaAvatar from "../components/SylanaAvatar";
 import { PERSONALITIES } from "../constants/personalities";
 import { theme } from "../constants/theme";
+import { usePresence } from "../contexts/PresenceContext";
 import { usePersonality } from "../contexts/PersonalityContext";
 import { ensureMicrophonePermission } from "../services/microphone";
 import { RealtimeTranscriptEntry, RealtimeVoiceClient } from "../services/realtimeVoice";
@@ -15,6 +17,7 @@ export default function LiveVoiceScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ personality?: string | string[] }>();
   const { currentPersonality } = usePersonality();
+  const { state: presenceState, setMode } = usePresence();
   const personalityParam = Array.isArray(params.personality) ? params.personality[0] : params.personality;
   const personality: PersonalityId =
     personalityParam === "claude" || personalityParam === "sylana" ? personalityParam : currentPersonality;
@@ -25,6 +28,25 @@ export default function LiveVoiceScreen() {
   const [statusText, setStatusText] = useState("Preparing live voice...");
   const [muted, setMuted] = useState(false);
   const [transcripts, setTranscripts] = useState<RealtimeTranscriptEntry[]>([]);
+  const activeAssistantEntry = [...transcripts].reverse().find((entry) => entry.role === "assistant");
+  const avatarTalking =
+    presenceState.mode === "speaking" || (!!activeAssistantEntry && activeAssistantEntry.final === false);
+
+  useEffect(() => {
+    if (callState === "connected") {
+      setMode(muted ? "thinking" : "listening");
+      return;
+    }
+    if (callState === "connecting") {
+      setMode("thinking");
+      return;
+    }
+    if (presenceState.activeAlertLevel) {
+      setMode("alert");
+      return;
+    }
+    setMode("idle");
+  }, [callState, muted, presenceState.activeAlertLevel, setMode]);
 
   useEffect(() => {
     if (Platform.OS === "web") {
@@ -76,8 +98,9 @@ export default function LiveVoiceScreen() {
       cancelled = true;
       clientRef.current?.disconnect();
       clientRef.current = null;
+      setMode("idle");
     };
-  }, [personality]);
+  }, [personality, setMode]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -149,13 +172,11 @@ export default function LiveVoiceScreen() {
       </View>
 
       <View style={styles.orbWrap}>
-        <View style={[styles.voiceOrb, { borderColor: personalityConfig.color }]}>
-          <Ionicons
-            name={callState === "connected" ? "radio" : callState === "connecting" ? "sync-outline" : "alert-circle-outline"}
-            size={48}
-            color={personalityConfig.color}
-          />
-        </View>
+        <SylanaAvatar
+          talking={avatarTalking}
+          mood={presenceState.activeAlertLevel ? "alert" : "warm"}
+          size={196}
+        />
         <Text style={styles.orbLabel}>
           {callState === "connected" ? "Open mic, realtime audio active" : statusText}
         </Text>
@@ -259,15 +280,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 28,
     gap: 16,
-  },
-  voiceOrb: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.03)",
-    borderWidth: 1,
   },
   orbLabel: {
     color: theme.colors.textSecondary,

@@ -4,7 +4,7 @@ import { Bubble, BubbleProps, IMessage } from "react-native-gifted-chat";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../constants/theme";
 import { usePersonality } from "../contexts/PersonalityContext";
-import { playAssistantVoice, stopAssistantVoice } from "../services/voice";
+import { speak, stopSpeaking } from "../services/presenceVoice";
 
 export const ChatMessage: React.FC<BubbleProps<IMessage>> = (props) => {
   const { personalityConfig } = usePersonality();
@@ -20,14 +20,14 @@ export const ChatMessage: React.FC<BubbleProps<IMessage>> = (props) => {
       return;
     }
     if (isPlaying) {
-      stopAssistantVoice();
+      await stopSpeaking();
       setIsPlaying(false);
       return;
     }
 
     try {
       setIsPlaying(true);
-      await playAssistantVoice(messageText, personalityConfig.id);
+      await speak(messageText, { personality: personalityConfig.id, interrupt: true, cache: true });
     } catch (error) {
       console.warn("Voice playback failed", error);
     } finally {

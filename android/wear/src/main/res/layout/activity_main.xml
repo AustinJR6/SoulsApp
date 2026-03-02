@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="#06080F"
+  android:fillViewport="true">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+      android:id="@+id/pulse_badge"
+      android:layout_width="54dp"
+      android:layout_height="54dp"
+      android:background="#8E9AAF"
+      android:gravity="center"
+      android:text="S"
+      android:textColor="#061018"
+      android:textSize="24sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/title_text"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="10dp"
+      android:text="Sylana Presence"
+      android:textColor="#F7F3FF"
+      android:textSize="16sp"
+      android:textStyle="bold" />
+
+    <TextView
+      android:id="@+id/severity_chip"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:background="#17202B"
+      android:paddingLeft="10dp"
+      android:paddingTop="4dp"
+      android:paddingRight="10dp"
+      android:paddingBottom="4dp"
+      android:text="STANDBY"
+      android:textColor="#8E9AAF"
+      android:textSize="11sp"
+      android:textStyle="bold" />
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:background="#101622"
+      android:orientation="vertical"
+      android:padding="12dp">
+
+      <TextView
+        android:id="@+id/summary_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Latest signal"
+        android:textColor="#8DA1B7"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/summary_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Waiting for presence events from your phone."
+        android:textColor="#F3F5FA"
+        android:textSize="13sp" />
+    </LinearLayout>
+
+    <TextView
+      android:id="@+id/timestamp_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="10dp"
+      android:text="No synced event yet"
+      android:textColor="#93A2B8"
+      android:textSize="10sp" />
+
+    <TextView
+      android:id="@+id/meta_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:text="Type: standby | Route: /(tabs)/presence"
+      android:textColor="#708097"
+      android:textSize="10sp" />
+
+    <TextView
+      android:id="@+id/hint_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="14dp"
+      android:text="Open the phone app and trigger Heart Ping from Presence."
+      android:textColor="#C5CCDA"
+      android:textSize="11sp" />
+  </LinearLayout>
+</ScrollView>

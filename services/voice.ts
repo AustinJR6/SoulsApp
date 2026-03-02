@@ -1,14 +1,7 @@
-import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import { requestJsonWithFailover, requestWithFailover } from "./api";
+import { speak, stopSpeaking } from "./presenceVoice";
 
 type PersonalityId = "sylana" | "claude";
-
-interface SpeechResponse {
-  audio_url: string;
-  voice: string;
-  personality: string;
-  model: string;
-}
 
 interface TranscriptionResponse {
   text: string;
@@ -23,46 +16,6 @@ interface RealtimeSessionResponse {
   [key: string]: unknown;
 }
 
-let player = createAudioPlayer();
-let completionResolver: (() => void) | null = null;
-
-player.addListener("playbackStatusUpdate", (status) => {
-  if (!completionResolver) {
-    return;
-  }
-  if (status.didJustFinish || (!status.playing && status.duration > 0 && status.currentTime >= status.duration)) {
-    const resolve = completionResolver;
-    completionResolver = null;
-    resolve();
-  }
-});
-
-async function configurePlaybackMode() {
-  await setAudioModeAsync({
-    playsInSilentMode: true,
-    interruptionMode: "duckOthers",
-    shouldPlayInBackground: false,
-    allowsRecording: false,
-  });
-}
-
-async function resolveSpeechUrl(text: string, personality: PersonalityId): Promise<string> {
-  const { text: raw, baseUrl } = await requestWithFailover(
-    "/api/voice/speak",
-    {
-      method: "POST",
-      body: JSON.stringify({ text, personality }),
-    },
-    "json"
-  );
-  const parsed = (raw ? JSON.parse(raw) : {}) as SpeechResponse;
-  const relative = String(parsed.audio_url || "").trim();
-  if (!relative) {
-    throw new Error("Voice endpoint returned no audio URL");
-  }
-  return new URL(relative, `${baseUrl}/`).toString();
-}
-
 export async function playAssistantVoice(
   text: string,
   personality: PersonalityId,
@@ -72,23 +25,16 @@ export async function playAssistantVoice(
   if (!trimmed) {
     return;
   }
-
-  await configurePlaybackMode();
-  const url = await resolveSpeechUrl(trimmed, personality);
-  completionResolver = null;
-  player.replace(url);
-  player.play();
-
-  if (options.waitUntilFinished) {
-    await new Promise<void>((resolve) => {
-      completionResolver = resolve;
-    });
-  }
+  await speak(trimmed, {
+    personality,
+    interrupt: true,
+    cache: true,
+    priority: options.waitUntilFinished ? "high" : "normal",
+  });
 }
 
 export function stopAssistantVoice() {
-  completionResolver = null;
-  player.pause();
+  void stopSpeaking();
 }
 
 export async function transcribeRecordedAudio(uri: string, personality: PersonalityId): Promise<TranscriptionResponse> {

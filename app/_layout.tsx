@@ -6,9 +6,12 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 import { theme } from '../constants/theme';
+import { PresenceProvider } from '../contexts/PresenceContext';
 import { PersonalityProvider } from '../contexts/PersonalityContext';
 import { chatService } from '../services/api';
 import { healthService } from '../services/HealthService';
+import { pingHeart } from '../services/presenceHaptics';
+import { markPresenceAlert } from '../services/presenceRuntime';
 import { supabase } from '../services/supabase';
 
 Notifications.setNotificationHandler({
@@ -75,11 +78,48 @@ function isTopicAlertResponse(response: Notifications.NotificationResponse): boo
   return type === 'topic_alert' || screen === 'alerts' || route.includes('/alerts');
 }
 
+function getNotificationPresenceLevel(
+  response: Notifications.NotificationResponse
+): 'info' | 'warning' | 'critical' | 'heart' | null {
+  const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+  const severity = typeof data?.severity === 'string' ? data.severity.toLowerCase() : '';
+  if (severity === 'heart' || severity === 'critical' || severity === 'warning' || severity === 'info') {
+    return severity;
+  }
+  const type = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
+  return type === 'heart_ping' ? 'heart' : null;
+}
+
+function getNotificationPresenceHaptic(
+  response: Notifications.NotificationResponse
+): 'heart' | 'critical' | null {
+  const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+  const presence = data?.presence && typeof data.presence === 'object' ? (data.presence as Record<string, unknown>) : undefined;
+  const haptic = typeof presence?.haptic === 'string' ? presence.haptic.toLowerCase() : '';
+  if (haptic === 'heart' || haptic === 'critical') {
+    return haptic;
+  }
+  const level = getNotificationPresenceLevel(response);
+  return level === 'heart' || level === 'critical' ? level : null;
+}
+
+function getNotificationSummary(response: Notifications.NotificationResponse): string | undefined {
+  return response.notification.request.content.body ?? undefined;
+}
+
 function useOutreachNotificationRouting() {
   const router = useRouter();
 
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const level = getNotificationPresenceLevel(response);
+      const haptic = getNotificationPresenceHaptic(response);
+      if (level) {
+        markPresenceAlert(level, getNotificationSummary(response));
+        if (haptic) {
+          void pingHeart(haptic);
+        }
+      }
       if (isDraftAlertResponse(response)) {
         router.push('/(tabs)/outreach/queue');
         return;
@@ -91,6 +131,14 @@ function useOutreachNotificationRouting() {
 
     Notifications.getLastNotificationResponseAsync()
       .then((response) => {
+        const level = response ? getNotificationPresenceLevel(response) : null;
+        const haptic = response ? getNotificationPresenceHaptic(response) : null;
+        if (response && level) {
+          markPresenceAlert(level, getNotificationSummary(response));
+          if (haptic) {
+            void pingHeart(haptic);
+          }
+        }
         if (response && isDraftAlertResponse(response)) {
           router.push('/(tabs)/outreach/queue');
           return;
@@ -211,23 +259,25 @@ export default function RootLayout() {
   }
 
   return (
-    <PersonalityProvider>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: theme.colors.background },
-        }}
-      >
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen
-          name="live-voice"
-          options={{
+    <PresenceProvider>
+      <PersonalityProvider>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
             headerShown: false,
-            presentation: "fullScreenModal",
+            contentStyle: { backgroundColor: theme.colors.background },
           }}
-        />
-      </Stack>
-    </PersonalityProvider>
+        >
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="live-voice"
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+            }}
+          />
+        </Stack>
+      </PersonalityProvider>
+    </PresenceProvider>
   );
 }
