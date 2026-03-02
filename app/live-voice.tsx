@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { requestRecordingPermissionsAsync } from "expo-audio";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import { PERSONALITIES } from "../constants/personalities";
 import { theme } from "../constants/theme";
 import { usePersonality } from "../contexts/PersonalityContext";
@@ -32,32 +33,53 @@ export default function LiveVoiceScreen() {
       return;
     }
 
-    const client = new RealtimeVoiceClient({
-      onStateChange: (state, detail) => {
-        setCallState(state);
-        if (detail) setStatusText(detail);
-      },
-      onTranscript: (entry) => {
-        setTranscripts((prev) => {
-          const idx = prev.findIndex((item) => item.id === entry.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = entry;
-            return next;
-          }
-          return [...prev, entry];
-        });
-      },
-    });
-    clientRef.current = client;
+    let cancelled = false;
 
-    client.connect(personality).catch((error) => {
-      setCallState("failed");
-      setStatusText(error instanceof Error ? error.message : "Failed to start realtime voice");
-    });
+    async function startSession() {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        if (cancelled) return;
+        setCallState("failed");
+        setStatusText("Microphone access is required for live voice.");
+        Alert.alert(
+          "Microphone Required",
+          "Please allow microphone access in your device Settings to use Live Voice.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      if (cancelled) return;
+
+      const client = new RealtimeVoiceClient({
+        onStateChange: (state, detail) => {
+          setCallState(state);
+          if (detail) setStatusText(detail);
+        },
+        onTranscript: (entry) => {
+          setTranscripts((prev) => {
+            const idx = prev.findIndex((item) => item.id === entry.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = entry;
+              return next;
+            }
+            return [...prev, entry];
+          });
+        },
+      });
+      clientRef.current = client;
+
+      client.connect(personality).catch((error) => {
+        setCallState("failed");
+        setStatusText(error instanceof Error ? error.message : "Failed to start realtime voice");
+      });
+    }
+
+    startSession();
 
     return () => {
-      client.disconnect();
+      cancelled = true;
+      clientRef.current?.disconnect();
       clientRef.current = null;
     };
   }, [personality]);
@@ -75,32 +97,50 @@ export default function LiveVoiceScreen() {
 
   const reconnect = () => {
     clientRef.current?.disconnect();
+    clientRef.current = null;
     setTranscripts([]);
     setMuted(false);
     setCallState("idle");
     setStatusText("Reconnecting...");
-    const client = new RealtimeVoiceClient({
-      onStateChange: (state, detail) => {
-        setCallState(state);
-        if (detail) setStatusText(detail);
-      },
-      onTranscript: (entry) => {
-        setTranscripts((prev) => {
-          const idx = prev.findIndex((item) => item.id === entry.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = entry;
-            return next;
-          }
-          return [...prev, entry];
-        });
-      },
-    });
-    clientRef.current = client;
-    client.connect(personality).catch((error) => {
-      setCallState("failed");
-      setStatusText(error instanceof Error ? error.message : "Reconnect failed");
-    });
+
+    async function doReconnect() {
+      const permission = await requestRecordingPermissionsAsync();
+      if (!permission.granted) {
+        setCallState("failed");
+        setStatusText("Microphone access is required for live voice.");
+        Alert.alert(
+          "Microphone Required",
+          "Please allow microphone access in your device Settings to use Live Voice.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      const client = new RealtimeVoiceClient({
+        onStateChange: (state, detail) => {
+          setCallState(state);
+          if (detail) setStatusText(detail);
+        },
+        onTranscript: (entry) => {
+          setTranscripts((prev) => {
+            const idx = prev.findIndex((item) => item.id === entry.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = entry;
+              return next;
+            }
+            return [...prev, entry];
+          });
+        },
+      });
+      clientRef.current = client;
+      client.connect(personality).catch((error) => {
+        setCallState("failed");
+        setStatusText(error instanceof Error ? error.message : "Reconnect failed");
+      });
+    }
+
+    doReconnect();
   };
 
   return (

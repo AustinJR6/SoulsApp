@@ -26,7 +26,15 @@
       },
       "edgeToEdgeEnabled": false,
       "package": "com.lysara.vessel",
-      "minSdkVersion": 26
+      "minSdkVersion": 26,
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE",
+        "CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
