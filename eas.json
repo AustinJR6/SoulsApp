@@ -12,7 +12,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-nx3bugauba-uc.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-11447506833.us-central1.run.app",
         "EXPO_PUBLIC_SUPABASE_URL": "https://cminvmbygkplwyogiorg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_NMGM3S9_BRakTSM-zR7-Vw_v6SQl1OT"
       }
@@ -24,7 +24,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-nx3bugauba-uc.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-11447506833.us-central1.run.app",
         "EXPO_PUBLIC_SUPABASE_URL": "https://cminvmbygkplwyogiorg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_NMGM3S9_BRakTSM-zR7-Vw_v6SQl1OT"
       }
@@ -32,7 +32,7 @@
     "production": {
       "environment": "production",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-nx3bugauba-uc.a.run.app",
+        "EXPO_PUBLIC_API_BASE_URL": "https://sylana-vessel-11447506833.us-central1.run.app",
         "EXPO_PUBLIC_SUPABASE_URL": "https://cminvmbygkplwyogiorg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_NMGM3S9_BRakTSM-zR7-Vw_v6SQl1OT"
       }
