@@ -866,7 +866,7 @@ export default function ChatScreen() {
         onPresetSelect={handleApplyPreset}
       />
 
-      <View style={styles.voiceTray}>
+      <View style={styles.voiceBanner}>
         <View style={styles.voiceStatusPill}>
           <Ionicons
             name={isRecordingVoice ? "radio" : "mic-outline"}
@@ -876,15 +876,11 @@ export default function ChatScreen() {
           <Text style={styles.voiceStatusText}>{voiceStatusLabel}</Text>
         </View>
         <Pressable
-          style={styles.liveVoiceToggle}
+          style={styles.liveVoiceButton}
           onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
         >
-          <Ionicons
-            name="headset-outline"
-            size={16}
-            color={theme.colors.textSecondary}
-          />
-          <Text style={styles.liveVoiceToggleText}>Call</Text>
+          <Ionicons name="headset-outline" size={18} color={theme.colors.textPrimary} />
+          <Text style={styles.liveVoiceButtonText}>Start Live Voice</Text>
         </Pressable>
       </View>
 
@@ -908,23 +904,13 @@ export default function ChatScreen() {
         renderBubble={(props) => <ChatMessage {...props} />}
         renderFooter={() => (isTyping ? <TypingIndicator /> : null)}
         renderActions={() => (
-          <View style={styles.composerActionRow}>
-            {activeTools.includes("photos") ? (
+          activeTools.includes("photos") ? (
+            <View style={styles.composerActionRow}>
               <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
                 <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
               </Pressable>
-            ) : null}
-            <Pressable
-              style={styles.liveComposerBtn}
-              onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
-            >
-              <Ionicons
-                name="headset-outline"
-                size={18}
-                color={theme.colors.textSecondary}
-              />
-            </Pressable>
-          </View>
+            </View>
+          ) : null
         )}
         renderSend={() => {
           const canSend = composerText.trim().length > 0 && !isTyping && !isTranscribingVoice;
@@ -1126,15 +1112,12 @@ const styles = StyleSheet.create({
   messageList: {
     backgroundColor: "transparent",
   },
-  voiceTray: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+  voiceBanner: {
     paddingHorizontal: 14,
     paddingBottom: 8,
+    gap: 10,
   },
   voiceStatusPill: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1146,33 +1129,26 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.06)",
   },
   voiceStatusText: {
-    flex: 1,
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
   },
-  liveVoiceToggle: {
+  liveVoiceButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: theme.colors.surface,
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(168,85,247,0.22)",
     borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  liveVoiceToggleActive: {
-    backgroundColor: "rgba(168,85,247,0.24)",
     borderColor: theme.colors.accent,
   },
-  liveVoiceToggleText: {
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  liveVoiceToggleTextActive: {
+  liveVoiceButtonText: {
     color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
   },
   composerActionRow: {
     flexDirection: "row",
@@ -1185,21 +1161,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 4,
     marginLeft: 6,
-  },
-  liveComposerBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  liveComposerBtnActive: {
-    backgroundColor: "rgba(168,85,247,0.24)",
-    borderColor: theme.colors.accent,
   },
   sendCluster: {
     flexDirection: "row",
