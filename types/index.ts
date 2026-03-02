@@ -19,9 +19,12 @@ export interface Personality {
   description: string;
 }
 
+export type ConversationMode = "default" | "spicy";
+
 export interface ChatResponse {
   response: string;
   personality: string;
+  conversation_mode?: ConversationMode;
   thread_id?: string | number;
   emotion?:
     | string
@@ -52,6 +55,7 @@ export interface ChatProject {
 export interface ChatThread {
   id: string;
   personality: Personality["id"];
+  mode: ConversationMode;
   title: string;
   projectId: string | null;
   backendThreadId: string | null;

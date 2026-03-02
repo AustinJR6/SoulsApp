@@ -95,6 +95,7 @@ const normalizeBackendThread = (thread: BackendThreadRow, messages: BackendMessa
   return {
     id: `thread_backend_${thread.id}`,
     personality,
+    mode: "default",
     title: title.length > 60 ? `${title.slice(0, 60)}...` : title,
     projectId: null,
     backendThreadId: String(thread.id),

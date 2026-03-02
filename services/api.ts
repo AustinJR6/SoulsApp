@@ -1,5 +1,5 @@
 ﻿import { Platform } from "react-native";
-import { ChatResponse } from "../types";
+import { ChatResponse, ConversationMode } from "../types";
 
 const FALLBACK_API_URLS = [
   "https://sylana-vessel-11447506833.us-central1.run.app",
@@ -148,7 +148,8 @@ export const chatService = {
     personality: string,
     threadId?: string | number | null,
     healthContext?: string,
-    activeTools?: string[]
+    activeTools?: string[],
+    conversationMode: ConversationMode = "default"
   ): Promise<ChatResponse> => {
     const enrichedMessage = healthContext ? `${healthContext}\n\n${message}` : message;
 
@@ -157,6 +158,7 @@ export const chatService = {
       body: JSON.stringify({
         message: enrichedMessage,
         personality,
+        conversation_mode: conversationMode,
         thread_id: threadId ?? undefined,
         active_tools: activeTools ?? undefined,
       }),
@@ -169,7 +171,8 @@ export const chatService = {
     onChunk: (chunk: string) => void,
     threadId?: string | number | null,
     healthContext?: string,
-    activeTools?: string[]
+    activeTools?: string[],
+    conversationMode: ConversationMode = "default"
   ): Promise<void> => {
     const enrichedMessage = healthContext ? `${healthContext}\n\n${message}` : message;
 
@@ -185,6 +188,7 @@ export const chatService = {
           body: JSON.stringify({
             message: enrichedMessage,
             personality,
+            conversation_mode: conversationMode,
             thread_id: threadId ?? undefined,
             active_tools: activeTools ?? undefined,
           }),
@@ -201,7 +205,14 @@ export const chatService = {
         // RN environments without stream reader support: fallback to sync response flow.
         const reader = response.body?.getReader?.();
         if (!reader) {
-          const fallback = await chatService.sendMessage(message, personality, threadId, healthContext, activeTools);
+          const fallback = await chatService.sendMessage(
+            message,
+            personality,
+            threadId,
+            healthContext,
+            activeTools,
+            conversationMode
+          );
           onChunk(String(fallback.response || ""));
           return;
         }
@@ -236,7 +247,14 @@ export const chatService = {
     }
 
     // Final fallback to sync call so user still gets a response.
-    const fallback = await chatService.sendMessage(message, personality, threadId, healthContext, activeTools);
+    const fallback = await chatService.sendMessage(
+      message,
+      personality,
+      threadId,
+      healthContext,
+      activeTools,
+      conversationMode
+    );
     onChunk(String(fallback.response || ""));
     if (lastError) {
       console.warn("SSE stream fallback to sync due to:", lastError.message);

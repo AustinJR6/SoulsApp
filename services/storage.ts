@@ -2,9 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { IMessage } from "react-native-gifted-chat";
 import { DEFAULT_PERSONALITY } from "../constants/personalities";
 import { DEFAULT_TOOL_IDS, sanitizeTools } from "../constants/tools";
-import { ChatWorkspace, Personality } from "../types";
+import { ChatWorkspace, ConversationMode, Personality } from "../types";
 
 type PersonalityId = Personality["id"];
+type ConversationModeMap = Record<PersonalityId, ConversationMode>;
 type StoredMessage = Omit<IMessage, "createdAt"> & { createdAt: string };
 type StoredWorkspace = Omit<ChatWorkspace, "threads"> & {
   threads: Array<Omit<ChatWorkspace["threads"][number], "messages"> & { messages: StoredMessage[] }>;
@@ -14,6 +15,10 @@ type LegacyHistory = Partial<Record<PersonalityId, StoredMessage[]>>;
 type LegacyThreadMap = Partial<Record<PersonalityId, string>>;
 
 const PERSONALITIES: PersonalityId[] = ["sylana", "claude"];
+const DEFAULT_MODE_BY_PERSONALITY: ConversationModeMap = {
+  sylana: "default",
+  claude: "default",
+};
 
 const KEYS = {
   CURRENT_PERSONALITY: "@vessel_current_personality",
@@ -22,6 +27,7 @@ const KEYS = {
   CHAT_HISTORY_BY_PERSONALITY: "@vessel_chat_history_by_personality",
   CHAT_WORKSPACE: "@vessel_chat_workspace",
   TOOL_DEFAULTS_BY_PERSONALITY: "@vessel_tool_defaults_by_personality",
+  MODE_DEFAULTS_BY_PERSONALITY: "@vessel_mode_defaults_by_personality",
   USER_PREFERENCES: "@vessel_preferences",
 };
 
@@ -61,6 +67,11 @@ const createEmptyWorkspace = (): ChatWorkspace => ({
   },
 });
 
+const normalizeConversationMode = (
+  mode: unknown,
+  personality: PersonalityId
+): ConversationMode => (mode === "spicy" && personality === "sylana" ? "spicy" : "default");
+
 const normalizeWorkspace = (workspace: StoredWorkspace | ChatWorkspace): ChatWorkspace => {
   const normalized = createEmptyWorkspace();
 
@@ -75,6 +86,7 @@ const normalizeWorkspace = (workspace: StoredWorkspace | ChatWorkspace): ChatWor
   normalized.threads = Array.isArray(workspace.threads)
     ? workspace.threads.map((thread) => ({
         ...thread,
+        mode: normalizeConversationMode((thread as { mode?: unknown }).mode, thread.personality),
         title: thread.title || "New chat",
         projectId: thread.projectId ?? null,
         backendThreadId: thread.backendThreadId ?? null,
@@ -118,6 +130,7 @@ const migrateLegacyWorkspace = async (): Promise<ChatWorkspace> => {
     workspace.threads.push({
       id: threadId,
       personality,
+      mode: DEFAULT_MODE_BY_PERSONALITY[personality],
       title: "Imported chat",
       projectId: null,
       backendThreadId: legacyThreadIds[personality] ?? fallbackThreadId ?? null,
@@ -163,6 +176,24 @@ export const storage = {
       sylana: Array.isArray(parsed.sylana) ? parsed.sylana.filter((tool) => typeof tool === "string") : [],
       claude: Array.isArray(parsed.claude) ? parsed.claude.filter((tool) => typeof tool === "string") : [],
     };
+  },
+
+  getModeDefaultsByPersonality: async (): Promise<ConversationModeMap> => {
+    const raw = await AsyncStorage.getItem(KEYS.MODE_DEFAULTS_BY_PERSONALITY);
+    const parsed = parseJson<Partial<Record<PersonalityId, ConversationMode>>>(raw, {});
+    return {
+      sylana: normalizeConversationMode(parsed.sylana, "sylana"),
+      claude: normalizeConversationMode(parsed.claude, "claude"),
+    };
+  },
+
+  setModeDefaultsByPersonality: async (value: Partial<Record<PersonalityId, ConversationMode>>): Promise<void> => {
+    const current = await storage.getModeDefaultsByPersonality();
+    const next: ConversationModeMap = {
+      sylana: value.sylana ? normalizeConversationMode(value.sylana, "sylana") : current.sylana,
+      claude: value.claude ? normalizeConversationMode(value.claude, "claude") : current.claude,
+    };
+    await AsyncStorage.setItem(KEYS.MODE_DEFAULTS_BY_PERSONALITY, JSON.stringify(next));
   },
 
   setToolDefaultsByPersonality: async (value: Partial<Record<PersonalityId, string[]>>): Promise<void> => {

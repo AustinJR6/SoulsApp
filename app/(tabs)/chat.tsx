@@ -30,13 +30,17 @@ import { ensureMicrophonePermission } from "../../services/microphone";
 import { buildHealthContext } from "../../services/VitalsContextService";
 import { storage } from "../../services/storage";
 import { stopAssistantVoice, transcribeRecordedAudio } from "../../services/voice";
-import { ChatProject, ChatThread, ChatWorkspace, Personality, ToolDescriptor } from "../../types";
+import { ChatProject, ChatThread, ChatWorkspace, ConversationMode, Personality, ToolDescriptor } from "../../types";
 import type { Photo } from "../../types/photo";
 
 const SYSTEM_USER_ID = 2;
 const USER = { _id: 1, name: "Elias" };
 const SIDEBAR_WIDTH = 292;
 const SESSION_ID_REGEX = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i;
+const MODE_OPTIONS: Array<{ id: ConversationMode; label: string; description: string }> = [
+  { id: "default", label: "Default", description: "Grounded, warm, and balanced." },
+  { id: "spicy", label: "Spicy", description: "Bolder, flirtier, and more playful." },
+];
 
 const getGreeting = (personality: Personality["id"]) =>
   personality === "sylana"
@@ -57,12 +61,14 @@ const createGreeting = (personality: Personality["id"]): IMessage => ({
 const createThread = (
   personality: Personality["id"],
   projectId: string | null = null,
-  tools: string[] = [...DEFAULT_TOOL_IDS]
+  tools: string[] = [...DEFAULT_TOOL_IDS],
+  mode: ConversationMode = "default"
 ): ChatThread => {
   const now = new Date().toISOString();
   return {
     id: `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     personality,
+    mode: personality === "sylana" && mode === "spicy" ? "spicy" : "default",
     title: "New chat",
     projectId,
     backendThreadId: null,
@@ -154,6 +160,10 @@ export default function ChatScreen() {
     sylana: [...DEFAULT_TOOL_IDS],
     claude: [...DEFAULT_TOOL_IDS],
   });
+  const [modeDefaultsByPersonality, setModeDefaultsByPersonality] = useState<Record<Personality["id"], ConversationMode>>({
+    sylana: "default",
+    claude: "default",
+  });
   const { currentPersonality, personalityConfig, setPersonality } = usePersonality();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -176,6 +186,16 @@ export default function ChatScreen() {
           sylana: sanitizeTools(defaults.sylana.length ? defaults.sylana : [...DEFAULT_TOOL_IDS]),
           claude: sanitizeTools(defaults.claude.length ? defaults.claude : [...DEFAULT_TOOL_IDS]),
         });
+      })
+      .catch(() => {
+        // Ignore load failures and continue with built-in defaults.
+      });
+  }, []);
+
+  useEffect(() => {
+    storage.getModeDefaultsByPersonality()
+      .then((defaults) => {
+        setModeDefaultsByPersonality(defaults);
       })
       .catch(() => {
         // Ignore load failures and continue with built-in defaults.
@@ -338,6 +358,12 @@ export default function ChatScreen() {
     () => sanitizeTools(activeThread?.tools ?? toolDefaultsByPersonality[currentPersonality] ?? [...DEFAULT_TOOL_IDS]),
     [activeThread?.tools, currentPersonality, toolDefaultsByPersonality]
   );
+  const activeConversationMode = useMemo<ConversationMode>(() => {
+    if (currentPersonality !== "sylana") {
+      return "default";
+    }
+    return activeThread?.mode ?? modeDefaultsByPersonality[currentPersonality] ?? "default";
+  }, [activeThread?.mode, currentPersonality, modeDefaultsByPersonality]);
 
   const openThread = useCallback((threadId: string) => {
     setWorkspace((prev) => {
@@ -364,7 +390,8 @@ export default function ChatScreen() {
       const newThread = createThread(
         currentPersonality,
         projectId,
-        toolDefaultsByPersonality[currentPersonality] ?? [...DEFAULT_TOOL_IDS]
+        toolDefaultsByPersonality[currentPersonality] ?? [...DEFAULT_TOOL_IDS],
+        modeDefaultsByPersonality[currentPersonality] ?? "default"
       );
       return {
         ...prev,
@@ -376,7 +403,7 @@ export default function ChatScreen() {
       };
     });
     setIsSidebarOpen(false);
-  }, [currentPersonality, toolDefaultsByPersonality]);
+  }, [currentPersonality, modeDefaultsByPersonality, toolDefaultsByPersonality]);
 
   const createProject = useCallback(() => {
     setWorkspace((prev) => {
@@ -443,7 +470,8 @@ export default function ChatScreen() {
           const fresh = createThread(
             thread.personality,
             null,
-            toolDefaultsByPersonality[thread.personality] ?? [...DEFAULT_TOOL_IDS]
+            toolDefaultsByPersonality[thread.personality] ?? [...DEFAULT_TOOL_IDS],
+            modeDefaultsByPersonality[thread.personality] ?? "default"
           );
           filteredThreads.unshift(fresh);
           nextActiveMap[thread.personality] = fresh.id;
@@ -456,7 +484,7 @@ export default function ChatScreen() {
         activeThreadByPersonality: nextActiveMap,
       };
     });
-  }, [toolDefaultsByPersonality]);
+  }, [modeDefaultsByPersonality, toolDefaultsByPersonality]);
 
   const syncConversationTools = useCallback(async (thread: ChatThread, tools: string[]) => {
     const conversationId = thread.backendThreadId ?? thread.id;
@@ -539,6 +567,54 @@ export default function ChatScreen() {
     updateActiveThreadTools(preset.tools);
   }, [updateActiveThreadTools]);
 
+  const updateActiveThreadMode = useCallback((nextMode: ConversationMode) => {
+    if (!activeThread || currentPersonality !== "sylana") {
+      return;
+    }
+
+    const normalizedMode: ConversationMode = nextMode === "spicy" ? "spicy" : "default";
+    if ((activeThread.mode ?? "default") === normalizedMode) {
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const contextMessage: IMessage = {
+      _id: `mode-${Date.now()}`,
+      text: normalizedMode === "spicy" ? "Mode updated - Spicy tone enabled" : "Mode updated - Default tone restored",
+      createdAt: new Date(),
+      user: {
+        _id: SYSTEM_USER_ID,
+        name: "System",
+      },
+    };
+
+    setWorkspace((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        threads: prev.threads.map((thread) =>
+          thread.id !== activeThread.id
+            ? thread
+            : {
+                ...thread,
+                mode: normalizedMode,
+                messages: thread.messages.length > 1 ? GiftedChat.append(thread.messages, [contextMessage]) : thread.messages,
+                updatedAt: nowIso,
+              }
+        ),
+      };
+    });
+
+    setModeDefaultsByPersonality((prev) => {
+      const next = {
+        ...prev,
+        sylana: normalizedMode,
+      };
+      storage.setModeDefaultsByPersonality({ sylana: normalizedMode }).catch(() => {});
+      return next;
+    });
+  }, [activeThread, currentPersonality]);
+
   const sendTextMessage = useCallback(
     async (text: string) => {
       const trimmedText = text.trim();
@@ -605,7 +681,8 @@ export default function ChatScreen() {
           currentPersonality,
           parsedThreadId || null,
           liveHealthContext,
-          activeTools
+          activeTools,
+          activeConversationMode
         );
 
         const replyText = formatOutreachWorkflowResponse(String(response.response || ""), activeTools);
@@ -690,6 +767,7 @@ export default function ChatScreen() {
     },
     [
       activeThread,
+      activeConversationMode,
       activeTools,
       currentPersonality,
       isTyping,
@@ -852,7 +930,9 @@ export default function ChatScreen() {
           <Text numberOfLines={1} style={styles.headerTitle}>
             {activeThread?.title ?? "New chat"}
           </Text>
-          <Text style={styles.headerToolsCount}>{activeTools.length} tools active</Text>
+          <Text style={styles.headerToolsCount}>
+            {activeTools.length} tools active{currentPersonality === "sylana" ? ` • ${activeConversationMode} mode` : ""}
+          </Text>
         </View>
         <Pressable style={styles.headerIconBtn} onPress={() => createNewThread(null)}>
           <Ionicons name="add" size={22} color={theme.colors.textPrimary} />
@@ -870,6 +950,31 @@ export default function ChatScreen() {
         onToggleTool={handleToggleTool}
         onPresetSelect={handleApplyPreset}
       />
+
+      {currentPersonality === "sylana" ? (
+        <View style={styles.modeRow}>
+          <View style={styles.modeLabelBlock}>
+            <Text style={styles.modeTitle}>Sylana Mode</Text>
+            <Text style={styles.modeSubtitle}>
+              {MODE_OPTIONS.find((option) => option.id === activeConversationMode)?.description ?? MODE_OPTIONS[0].description}
+            </Text>
+          </View>
+          <View style={styles.modePills}>
+            {MODE_OPTIONS.map((option) => {
+              const selected = option.id === activeConversationMode;
+              return (
+                <Pressable
+                  key={option.id}
+                  style={[styles.modePill, selected && styles.modePillActive]}
+                  onPress={() => updateActiveThreadMode(option.id)}
+                >
+                  <Text style={[styles.modePillText, selected && styles.modePillTextActive]}>{option.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.voiceBanner}>
         <View style={styles.voiceStatusPill}>
@@ -1121,6 +1226,47 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 11,
     fontWeight: "600",
+  },
+  modeRow: {
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  modeLabelBlock: {
+    gap: 2,
+  },
+  modeTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modeSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  modePills: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  modePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
+  modePillActive: {
+    backgroundColor: "rgba(168,85,247,0.22)",
+    borderColor: theme.colors.accent,
+  },
+  modePillText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modePillTextActive: {
+    color: theme.colors.textPrimary,
   },
   messageList: {
     backgroundColor: "transparent",
