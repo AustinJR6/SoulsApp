@@ -61,11 +61,16 @@ def wireAutolinkedReactNativeProjects() {
       return
     }
 
+    def projectDir = file(sourceDir)
+    if (!projectDir.exists()) {
+      return
+    }
+
     def projectName = ":${sanitizeAutolinkProjectName(dependencyName)}"
     if (findProject(projectName) == null) {
       include(projectName)
     }
-    project(projectName).projectDir = file(sourceDir)
+    project(projectName).projectDir = projectDir
   }
 }
 
