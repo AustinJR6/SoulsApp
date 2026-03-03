@@ -1,5 +1,5 @@
 ﻿import { Platform } from "react-native";
-import { ChatResponse, ConversationMode } from "../types";
+import { ChatImageAttachment, ChatResponse, ConversationMode } from "../types";
 
 const FALLBACK_API_URLS = [
   "https://sylana-vessel-11447506833.us-central1.run.app",
@@ -149,7 +149,8 @@ export const chatService = {
     threadId?: string | number | null,
     healthContext?: string,
     activeTools?: string[],
-    conversationMode: ConversationMode = "default"
+    conversationMode: ConversationMode = "default",
+    imageAttachments?: ChatImageAttachment[]
   ): Promise<ChatResponse> => {
     const enrichedMessage = healthContext ? `${healthContext}\n\n${message}` : message;
     try {
@@ -161,6 +162,7 @@ export const chatService = {
           conversation_mode: conversationMode,
           thread_id: threadId ?? undefined,
           active_tools: activeTools ?? undefined,
+          image_urls: imageAttachments?.map((item) => ({ url: item.url, caption: item.caption ?? undefined })),
         }),
       });
     } catch (error) {
@@ -173,6 +175,7 @@ export const chatService = {
             conversation_mode: "default",
             thread_id: threadId ?? undefined,
             active_tools: activeTools ?? undefined,
+            image_urls: imageAttachments?.map((item) => ({ url: item.url, caption: item.caption ?? undefined })),
           }),
         });
         return {
@@ -192,7 +195,8 @@ export const chatService = {
     threadId?: string | number | null,
     healthContext?: string,
     activeTools?: string[],
-    conversationMode: ConversationMode = "default"
+    conversationMode: ConversationMode = "default",
+    imageAttachments?: ChatImageAttachment[]
   ): Promise<void> => {
     const enrichedMessage = healthContext ? `${healthContext}\n\n${message}` : message;
 
@@ -211,6 +215,7 @@ export const chatService = {
             conversation_mode: conversationMode,
             thread_id: threadId ?? undefined,
             active_tools: activeTools ?? undefined,
+            image_urls: imageAttachments?.map((item) => ({ url: item.url, caption: item.caption ?? undefined })),
           }),
         });
 
@@ -231,7 +236,8 @@ export const chatService = {
             threadId,
             healthContext,
             activeTools,
-            conversationMode
+            conversationMode,
+            imageAttachments
           );
           onChunk(String(fallback.response || ""));
           return;
@@ -273,7 +279,8 @@ export const chatService = {
       threadId,
       healthContext,
       activeTools,
-      conversationMode
+      conversationMode,
+      imageAttachments
     );
     onChunk(String(fallback.response || ""));
     if (lastError) {

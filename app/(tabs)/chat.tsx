@@ -30,7 +30,7 @@ import { ensureMicrophonePermission } from "../../services/microphone";
 import { buildHealthContext } from "../../services/VitalsContextService";
 import { storage } from "../../services/storage";
 import { stopAssistantVoice, transcribeRecordedAudio } from "../../services/voice";
-import { ChatProject, ChatThread, ChatWorkspace, ConversationMode, Personality, ToolDescriptor } from "../../types";
+import { ChatImageAttachment, ChatProject, ChatThread, ChatWorkspace, ConversationMode, Personality, ToolDescriptor } from "../../types";
 import type { Photo } from "../../types/photo";
 
 const SYSTEM_USER_ID = 2;
@@ -623,9 +623,10 @@ export default function ChatScreen() {
   }, [activeThread, currentPersonality]);
 
   const sendTextMessage = useCallback(
-    async (text: string) => {
+    async (text: string, imageAttachments?: ChatImageAttachment[]) => {
       const trimmedText = text.trim();
-      if (!trimmedText || !activeThread || isTyping) {
+      const attachments = imageAttachments?.filter((item) => item.url) ?? [];
+      if ((!trimmedText && attachments.length === 0) || !activeThread || isTyping) {
         return;
       }
 
@@ -689,7 +690,8 @@ export default function ChatScreen() {
           parsedThreadId || null,
           liveHealthContext,
           activeTools,
-          activeConversationMode
+          activeConversationMode,
+          attachments
         );
         const fellBackToDefault = activeConversationMode === "spicy" && response.conversation_mode === "default";
 
@@ -902,7 +904,10 @@ export default function ChatScreen() {
         createdAt: new Date(photo.created_at),
         user: USER,
       };
-
+      const attachment: ChatImageAttachment = {
+        url: photo.public_url,
+        caption: photo.caption ?? null,
+      };
       setWorkspace((prev) => {
         if (!prev) return prev;
         return {
@@ -919,8 +924,13 @@ export default function ChatScreen() {
           ),
         };
       });
+
+      const prompt = (photo.caption || "").trim()
+        ? `Please analyze this photo and respond to my request: ${photo.caption?.trim()}`
+        : "Please analyze the photo I just shared in detail. Tell me what you notice, who or what is present, and remember useful identity and place details for later conversations.";
+      void sendTextMessage(prompt, [attachment]);
     },
-    [activeThread]
+    [activeThread, sendTextMessage]
   );
 
   if (!isHydrated || !workspace) {

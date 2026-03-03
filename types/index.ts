@@ -21,6 +21,11 @@ export interface Personality {
 
 export type ConversationMode = "default" | "spicy";
 
+export interface ChatImageAttachment {
+  url: string;
+  caption?: string | null;
+}
+
 export interface ChatResponse {
   response: string;
   personality: string;

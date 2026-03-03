@@ -56,7 +56,7 @@ export default function PresenceScreen() {
       return;
     }
     if (testMode === "haptic") {
-      void pingHeart("heart");
+      void pingHeart("heart", { mirrorNotification: true });
       return;
     }
     if (testMode === "avatar") {
@@ -240,10 +240,10 @@ export default function PresenceScreen() {
           </View>
         ) : null}
         <View style={styles.buttonRow}>
-          <Pressable style={styles.primaryButton} onPress={() => void pingHeart("heart")}>
+          <Pressable style={styles.primaryButton} onPress={() => void pingHeart("heart", { mirrorNotification: true })}>
             <Text style={styles.primaryButtonText}>Heart Ping</Text>
           </Pressable>
-          <Pressable style={styles.primaryButton} onPress={() => void pingHeart("critical")}>
+          <Pressable style={styles.primaryButton} onPress={() => void pingHeart("critical", { mirrorNotification: true })}>
             <Text style={styles.primaryButtonText}>Critical Ping</Text>
           </Pressable>
         </View>
