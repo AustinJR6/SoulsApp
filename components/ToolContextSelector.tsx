@@ -49,6 +49,7 @@ interface Preset {
 
 interface Props {
   expanded: boolean;
+  embedded?: boolean;
   availableTools: ToolDescriptor[];
   activeTools: string[];
   presets: Preset[];
@@ -59,6 +60,7 @@ interface Props {
 
 export function ToolContextSelector({
   expanded,
+  embedded = false,
   availableTools,
   activeTools,
   presets,
@@ -86,8 +88,40 @@ export function ToolContextSelector({
     [activeTools, availableTools]
   );
 
+  const expandedContent = (
+    <View style={styles.expandedArea}>
+      <View style={styles.presetRow}>
+        {presets.map((preset) => (
+          <Pressable key={preset.id} style={styles.presetBtn} onPress={() => onPresetSelect(preset.id)}>
+            <Text style={styles.presetText}>{preset.label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRow}>
+        {availableTools.map((tool) => {
+          const active = activeTools.includes(tool.id);
+          return (
+            <Pressable
+              key={tool.id}
+              style={[styles.toolChip, active ? styles.toolChipActive : styles.toolChipInactive]}
+              onPress={() => onToggleTool(tool.id)}
+            >
+              <ToolIcon id={tool.id} color={active ? "#ffffff" : theme.colors.textMuted} />
+              <Text style={[styles.toolText, active ? styles.toolTextActive : styles.toolTextInactive]}>{tool.label}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+
+  if (embedded) {
+    return <View style={styles.embeddedWrap}>{expandedContent}</View>;
+  }
+
   return (
-    <Animated.View style={[styles.wrap, { height }]}> 
+    <Animated.View style={[styles.wrap, { height }]}>
       <View style={styles.rowTop}>
         <Pressable style={styles.contextBtn} onPress={onToggleExpanded}>
           <Wrench size={15} color={theme.colors.textSecondary} />
@@ -110,49 +144,25 @@ export function ToolContextSelector({
         </ScrollView>
       </View>
 
-      {expanded ? (
-        <View style={styles.expandedArea}>
-          <View style={styles.presetRow}>
-            {presets.map((preset) => (
-              <Pressable key={preset.id} style={styles.presetBtn} onPress={() => onPresetSelect(preset.id)}>
-                <Text style={styles.presetText}>{preset.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolRow}>
-            {availableTools.map((tool) => {
-              const active = activeTools.includes(tool.id);
-              return (
-                <Pressable
-                  key={tool.id}
-                  style={[styles.toolChip, active ? styles.toolChipActive : styles.toolChipInactive]}
-                  onPress={() => onToggleTool(tool.id)}
-                >
-                  <ToolIcon id={tool.id} color={active ? "#ffffff" : theme.colors.textMuted} />
-                  <Text style={[styles.toolText, active ? styles.toolTextActive : styles.toolTextInactive]}>{tool.label}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
+      {expanded ? expandedContent : null}
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 56,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 14,
     backgroundColor: "rgba(12, 8, 23, 0.92)",
     overflow: "hidden",
-    zIndex: 12,
+  },
+  embeddedWrap: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    backgroundColor: "rgba(12, 8, 23, 0.92)",
+    overflow: "hidden",
   },
   rowTop: {
     height: 44,

@@ -152,17 +152,37 @@ export const chatService = {
     conversationMode: ConversationMode = "default"
   ): Promise<ChatResponse> => {
     const enrichedMessage = healthContext ? `${healthContext}\n\n${message}` : message;
-
-    return requestJsonWithFailover<ChatResponse>("/api/chat/sync", {
-      method: "POST",
-      body: JSON.stringify({
-        message: enrichedMessage,
-        personality,
-        conversation_mode: conversationMode,
-        thread_id: threadId ?? undefined,
-        active_tools: activeTools ?? undefined,
-      }),
-    });
+    try {
+      return await requestJsonWithFailover<ChatResponse>("/api/chat/sync", {
+        method: "POST",
+        body: JSON.stringify({
+          message: enrichedMessage,
+          personality,
+          conversation_mode: conversationMode,
+          thread_id: threadId ?? undefined,
+          active_tools: activeTools ?? undefined,
+        }),
+      });
+    } catch (error) {
+      if (conversationMode === "spicy") {
+        const fallback = await requestJsonWithFailover<ChatResponse>("/api/chat/sync", {
+          method: "POST",
+          body: JSON.stringify({
+            message: enrichedMessage,
+            personality,
+            conversation_mode: "default",
+            thread_id: threadId ?? undefined,
+            active_tools: activeTools ?? undefined,
+          }),
+        });
+        return {
+          ...fallback,
+          conversation_mode: "default",
+          fallback_reason: error instanceof Error ? error.message : "spicy_mode_failed",
+        };
+      }
+      throw error;
+    }
   },
 
   streamMessage: async (

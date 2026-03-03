@@ -151,7 +151,7 @@ export default function ChatScreen() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
-  const [isContextExpanded, setIsContextExpanded] = useState(false);
+  const [isControlsOpen, setIsControlsOpen] = useState(false);
   const [availableTools, setAvailableTools] = useState<ToolDescriptor[]>(TOOL_CATALOG);
   const [composerText, setComposerText] = useState("");
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -567,6 +567,13 @@ export default function ChatScreen() {
     updateActiveThreadTools(preset.tools);
   }, [updateActiveThreadTools]);
 
+  const openPhotoPicker = useCallback(() => {
+    if (!activeTools.includes("photos")) {
+      updateActiveThreadTools([...activeTools, "photos"]);
+    }
+    setShowPhotoPicker(true);
+  }, [activeTools, updateActiveThreadTools]);
+
   const updateActiveThreadMode = useCallback((nextMode: ConversationMode) => {
     if (!activeThread || currentPersonality !== "sylana") {
       return;
@@ -684,6 +691,7 @@ export default function ChatScreen() {
           activeTools,
           activeConversationMode
         );
+        const fellBackToDefault = activeConversationMode === "spicy" && response.conversation_mode === "default";
 
         const replyText = formatOutreachWorkflowResponse(String(response.response || ""), activeTools);
         const aiMessage: IMessage = {
@@ -696,6 +704,17 @@ export default function ChatScreen() {
             avatar: personalityConfig.avatar,
           },
         };
+        const fallbackMessage: IMessage | null = fellBackToDefault
+          ? {
+              _id: `mode-fallback-${Date.now()}`,
+              text: "Spicy mode is temporarily unavailable. Vessel fell back to Default mode for this reply.",
+              createdAt: new Date(),
+              user: {
+                _id: SYSTEM_USER_ID,
+                name: "System",
+              },
+            }
+          : null;
 
         setWorkspace((prev) => {
           if (!prev) {
@@ -712,12 +731,24 @@ export default function ChatScreen() {
               return {
                 ...thread,
                 backendThreadId: response.thread_id ? String(response.thread_id) : thread.backendThreadId,
-                messages: GiftedChat.append(thread.messages, [aiMessage]),
+                mode: fellBackToDefault ? "default" : thread.mode,
+                messages: GiftedChat.append(thread.messages, fallbackMessage ? [aiMessage, fallbackMessage] : [aiMessage]),
                 updatedAt: new Date().toISOString(),
               };
             }),
           };
         });
+
+        if (fellBackToDefault) {
+          setModeDefaultsByPersonality((prev) => {
+            const next = {
+              ...prev,
+              sylana: "default" as ConversationMode,
+            };
+            storage.setModeDefaultsByPersonality({ sylana: "default" }).catch(() => {});
+            return next;
+          });
+        }
 
         const nextConversationId = response.thread_id ?? backendThreadId ?? sendingThreadId;
         chatService.updateConversationTools(nextConversationId, activeTools).catch(() => {
@@ -941,38 +972,75 @@ export default function ChatScreen() {
 
       <PersonalityToggle />
 
-      <ToolContextSelector
-        expanded={isContextExpanded}
-        availableTools={availableTools}
-        activeTools={activeTools}
-        presets={TOOL_PRESETS}
-        onToggleExpanded={() => setIsContextExpanded((prev) => !prev)}
-        onToggleTool={handleToggleTool}
-        onPresetSelect={handleApplyPreset}
-      />
+      <View style={styles.quickActionRow}>
+        <Pressable style={styles.quickActionPill} onPress={() => setIsControlsOpen((prev) => !prev)}>
+          <Ionicons name={isControlsOpen ? "options" : "options-outline"} size={16} color={theme.colors.textSecondary} />
+          <Text style={styles.quickActionText}>Controls</Text>
+        </Pressable>
+        <Pressable
+          style={styles.quickActionPill}
+          accessibilityLabel="Open photo share"
+          accessibilityRole="button"
+          onPress={openPhotoPicker}
+        >
+          <Ionicons name="camera-outline" size={16} color={theme.colors.textSecondary} />
+          <Text style={styles.quickActionText}>Photo</Text>
+        </Pressable>
+        <Pressable
+          style={styles.quickActionPill}
+          accessibilityLabel="Start live voice call"
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
+        >
+          <Ionicons name="headset-outline" size={16} color={theme.colors.textSecondary} />
+          <Text style={styles.quickActionText}>Live Voice</Text>
+        </Pressable>
+      </View>
 
-      {currentPersonality === "sylana" ? (
-        <View style={styles.modeRow}>
-          <View style={styles.modeLabelBlock}>
-            <Text style={styles.modeTitle}>Sylana Mode</Text>
-            <Text style={styles.modeSubtitle}>
-              {MODE_OPTIONS.find((option) => option.id === activeConversationMode)?.description ?? MODE_OPTIONS[0].description}
+      {isControlsOpen ? (
+        <View style={styles.controlsPanel}>
+          <View style={styles.controlsSummaryRow}>
+            <Text style={styles.controlsSummaryText}>
+              {activeTools.length} tools active{currentPersonality === "sylana" ? ` | ${activeConversationMode} mode` : ""}
             </Text>
+            <Text style={styles.controlsSummaryHint}>Collapse controls for a cleaner chat view.</Text>
           </View>
-          <View style={styles.modePills}>
-            {MODE_OPTIONS.map((option) => {
-              const selected = option.id === activeConversationMode;
-              return (
-                <Pressable
-                  key={option.id}
-                  style={[styles.modePill, selected && styles.modePillActive]}
-                  onPress={() => updateActiveThreadMode(option.id)}
-                >
-                  <Text style={[styles.modePillText, selected && styles.modePillTextActive]}>{option.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+
+          {currentPersonality === "sylana" ? (
+            <View style={styles.modeRow}>
+              <View style={styles.modeLabelBlock}>
+                <Text style={styles.modeTitle}>Sylana Mode</Text>
+                <Text style={styles.modeSubtitle}>
+                  {MODE_OPTIONS.find((option) => option.id === activeConversationMode)?.description ?? MODE_OPTIONS[0].description}
+                </Text>
+              </View>
+              <View style={styles.modePills}>
+                {MODE_OPTIONS.map((option) => {
+                  const selected = option.id === activeConversationMode;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      style={[styles.modePill, selected && styles.modePillActive]}
+                      onPress={() => updateActiveThreadMode(option.id)}
+                    >
+                      <Text style={[styles.modePillText, selected && styles.modePillTextActive]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          <ToolContextSelector
+            embedded
+            expanded
+            availableTools={availableTools}
+            activeTools={activeTools}
+            presets={TOOL_PRESETS}
+            onToggleExpanded={() => {}}
+            onToggleTool={handleToggleTool}
+            onPresetSelect={handleApplyPreset}
+          />
         </View>
       ) : null}
 
@@ -985,15 +1053,6 @@ export default function ChatScreen() {
           />
           <Text style={styles.voiceStatusText}>{voiceStatusLabel}</Text>
         </View>
-        <Pressable
-          style={styles.liveVoiceButton}
-          accessibilityLabel="Start live voice call"
-          accessibilityRole="button"
-          onPress={() => router.push({ pathname: "/live-voice", params: { personality: currentPersonality } })}
-        >
-          <Ionicons name="headset-outline" size={18} color={theme.colors.textPrimary} />
-          <Text style={styles.liveVoiceButtonText}>Live Voice</Text>
-        </Pressable>
       </View>
 
       <GiftedChat<IMessage>
@@ -1015,19 +1074,19 @@ export default function ChatScreen() {
         messagesContainerStyle={styles.messageList}
         renderBubble={(props) => <ChatMessage {...props} />}
         renderFooter={() => (isTyping ? <TypingIndicator /> : null)}
-        renderActions={() => (
-          activeTools.includes("photos") ? (
-            <View style={styles.composerActionRow}>
-              <Pressable style={styles.cameraBtn} onPress={() => setShowPhotoPicker(true)}>
-                <Ionicons name="camera-outline" size={22} color={theme.colors.textSecondary} />
-              </Pressable>
-            </View>
-          ) : null
-        )}
+        renderActions={() => null}
         renderSend={() => {
           const canSend = composerText.trim().length > 0 && !isTyping && !isTranscribingVoice;
           return (
             <View style={styles.sendCluster}>
+              <Pressable
+                style={styles.voiceRecordBtn}
+                accessibilityLabel="Share a photo"
+                accessibilityRole="button"
+                onPress={openPhotoPicker}
+              >
+                <Ionicons name="camera-outline" size={20} color={theme.colors.textPrimary} />
+              </Pressable>
               <Pressable
                 style={[
                   styles.voiceRecordBtn,
@@ -1227,9 +1286,52 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
-  modeRow: {
+  quickActionRow: {
+    flexDirection: "row",
+    gap: 8,
     paddingHorizontal: 14,
     paddingBottom: 10,
+  },
+  quickActionPill: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  quickActionText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  controlsPanel: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: "rgba(12, 8, 23, 0.92)",
+    gap: 12,
+  },
+  controlsSummaryRow: {
+    gap: 4,
+  },
+  controlsSummaryText: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  controlsSummaryHint: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+  },
+  modeRow: {
     gap: 10,
   },
   modeLabelBlock: {
@@ -1274,7 +1376,6 @@ const styles = StyleSheet.create({
   voiceBanner: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 14,
     paddingBottom: 8,
     gap: 10,
@@ -1294,23 +1395,6 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
-  },
-  liveVoiceButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 16,
-    backgroundColor: "rgba(168,85,247,0.22)",
-    borderWidth: 1,
-    borderColor: theme.colors.accent,
-  },
-  liveVoiceButtonText: {
-    color: theme.colors.textPrimary,
-    fontSize: 13,
-    fontWeight: "700",
   },
   composerActionRow: {
     flexDirection: "row",

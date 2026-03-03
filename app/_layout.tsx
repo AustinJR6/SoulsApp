@@ -161,6 +161,14 @@ function useRegisterPushToken() {
   useEffect(() => {
     const run = async () => {
       try {
+        if (Platform.OS === "android") {
+          await Notifications.setNotificationChannelAsync("presence-alerts", {
+            name: "Presence Alerts",
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 180, 250],
+            lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          });
+        }
         const perms = await Notifications.getPermissionsAsync();
         let status = perms.status;
         if (status !== 'granted') {
