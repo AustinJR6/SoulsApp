@@ -7,6 +7,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReactMethod
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.Wearable
 import com.lysara.vessel.BuildConfig
 import org.json.JSONObject
@@ -15,6 +16,9 @@ import java.util.concurrent.TimeUnit
 
 class WearPresenceModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
+  companion object {
+    private const val PRESENCE_CAPABILITY = "vessel_presence_bridge"
+  }
 
   override fun getName(): String = "WearPresenceModule"
 
@@ -22,7 +26,13 @@ class WearPresenceModule(private val reactContext: ReactApplicationContext) :
   fun sendEvent(payload: ReadableMap, promise: Promise) {
     try {
       val json = JSONObject(payload.toHashMap()).toString().toByteArray(StandardCharsets.UTF_8)
-      val nodes = Tasks.await(Wearable.getNodeClient(reactContext).connectedNodes, 5, TimeUnit.SECONDS)
+      val nodes =
+        Tasks.await(
+          Wearable.getCapabilityClient(reactContext)
+            .getCapability(PRESENCE_CAPABILITY, CapabilityClient.FILTER_REACHABLE),
+          5,
+          TimeUnit.SECONDS
+        ).nodes.toList()
       if (nodes.isEmpty()) {
         promise.resolve(false)
         return
@@ -41,7 +51,14 @@ class WearPresenceModule(private val reactContext: ReactApplicationContext) :
   fun getStatus(promise: Promise) {
     try {
       val nodes = Tasks.await(Wearable.getNodeClient(reactContext).connectedNodes, 5, TimeUnit.SECONDS)
-      promise.resolve(createStatusResult(nodes))
+      val appNodes =
+        Tasks.await(
+          Wearable.getCapabilityClient(reactContext)
+            .getCapability(PRESENCE_CAPABILITY, CapabilityClient.FILTER_REACHABLE),
+          5,
+          TimeUnit.SECONDS
+        ).nodes.toList()
+      promise.resolve(createStatusResult(nodes, appNodes))
     } catch (error: Exception) {
       promise.reject("E_WEAR_STATUS", error)
     }
@@ -57,10 +74,15 @@ class WearPresenceModule(private val reactContext: ReactApplicationContext) :
     getStatus(promise)
   }
 
-  private fun createStatusResult(nodes: List<com.google.android.gms.wearable.Node>) =
+  private fun createStatusResult(
+    nodes: List<com.google.android.gms.wearable.Node>,
+    appNodes: List<com.google.android.gms.wearable.Node>
+  ) =
     Arguments.createMap().apply {
       putBoolean("connected", nodes.isNotEmpty())
       putInt("nodes", nodes.size)
+      putBoolean("deliverable", appNodes.isNotEmpty())
+      putInt("appNodes", appNodes.size)
       putBoolean("embeddedApp", BuildConfig.HAS_WEAR_APP)
       val nodeArray = Arguments.createArray()
       nodes.forEach { node ->
@@ -73,5 +95,16 @@ class WearPresenceModule(private val reactContext: ReactApplicationContext) :
         )
       }
       putArray("nodeDetails", nodeArray)
+      val appNodeArray = Arguments.createArray()
+      appNodes.forEach { node ->
+        appNodeArray.pushMap(
+          Arguments.createMap().apply {
+            putString("id", node.id)
+            putString("displayName", node.displayName ?: "Wear device")
+            putBoolean("nearby", node.isNearby)
+          }
+        )
+      }
+      putArray("appNodeDetails", appNodeArray)
     }
 }

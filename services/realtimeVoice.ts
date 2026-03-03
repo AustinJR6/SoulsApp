@@ -7,7 +7,7 @@ import {
   RTCSessionDescription,
 } from "react-native-webrtc";
 import type RTCDataChannel from "react-native-webrtc/lib/typescript/RTCDataChannel";
-import { requestJsonWithFailover } from "./api";
+import { createRealtimeVoiceSession } from "./voice";
 
 type PersonalityId = "sylana" | "claude";
 type CallState = "idle" | "connecting" | "connected" | "disconnected" | "failed";
@@ -17,14 +17,6 @@ export interface RealtimeTranscriptEntry {
   role: "user" | "assistant" | "system";
   text: string;
   final: boolean;
-}
-
-interface RealtimeCallResponse {
-  sdp: string;
-  call_id?: string;
-  voice?: string;
-  personality?: string;
-  model?: string;
 }
 
 interface RealtimeVoiceCallbacks {
@@ -109,23 +101,32 @@ export class RealtimeVoiceClient {
     await this.peerConnection.setLocalDescription(offer);
     await this.waitForIceGathering();
 
-    const answer = await requestJsonWithFailover<RealtimeCallResponse>("/api/voice/realtime/call", {
+    const session = await createRealtimeVoiceSession(personality);
+    const clientSecret = String(session.client_secret?.value || "").trim();
+    if (!clientSecret) {
+      throw new Error("Realtime backend did not return a client secret");
+    }
+
+    const answerResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
-      body: JSON.stringify({
-        sdp: this.peerConnection.localDescription?.sdp,
-        personality,
-      }),
+      headers: {
+        Authorization: `Bearer ${clientSecret}`,
+        Accept: "application/sdp",
+        "Content-Type": "application/sdp",
+      },
+      body: this.peerConnection.localDescription?.sdp || "",
     });
-    if (!answer.sdp) {
-      throw new Error("Realtime backend did not return an SDP answer");
+    const answerSdp = await answerResponse.text();
+    if (!answerResponse.ok || !answerSdp.trim()) {
+      throw new Error(answerSdp || "Realtime call creation failed");
     }
     await this.peerConnection.setRemoteDescription(
       new RTCSessionDescription({
         type: "answer",
-        sdp: answer.sdp,
+        sdp: answerSdp,
       })
     );
-    this.callbacks.onStateChange?.("connected", `Connected to ${answer.personality || personality}`);
+    this.callbacks.onStateChange?.("connected", `Connected to ${session.personality || personality}`);
   }
 
   setMuted(muted: boolean) {

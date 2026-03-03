@@ -17,8 +17,11 @@ export interface WearNodeDetails {
 export interface WearConnectionStatus {
   connected: boolean;
   nodes: number;
+  deliverable: boolean;
+  appNodes: number;
   embeddedApp: boolean;
   nodeDetails: WearNodeDetails[];
+  appNodeDetails: WearNodeDetails[];
 }
 
 type WearPresenceNativeModule = {
@@ -30,22 +33,30 @@ type WearPresenceNativeModule = {
 
 const moduleRef = (NativeModules.WearPresenceModule ?? null) as WearPresenceNativeModule | null;
 
-export async function sendPresenceEventToWear(payload: WearPresencePayload): Promise<void> {
+export async function sendPresenceEventToWear(payload: WearPresencePayload): Promise<boolean> {
   if (Platform.OS !== "android" || !moduleRef) {
-    return;
+    return false;
   }
   if (moduleRef.sendPresenceEvent) {
-    await moduleRef.sendPresenceEvent(payload);
-    return;
+    return moduleRef.sendPresenceEvent(payload);
   }
   if (moduleRef.sendEvent) {
-    await moduleRef.sendEvent(payload);
+    return moduleRef.sendEvent(payload);
   }
+  return false;
 }
 
 export async function getWearConnectionStatus(): Promise<WearConnectionStatus> {
   if (Platform.OS !== "android" || !moduleRef) {
-    return { connected: false, nodes: 0, embeddedApp: false, nodeDetails: [] };
+    return {
+      connected: false,
+      nodes: 0,
+      deliverable: false,
+      appNodes: 0,
+      embeddedApp: false,
+      nodeDetails: [],
+      appNodeDetails: [],
+    };
   }
   if (moduleRef.getConnectionStatus) {
     return moduleRef.getConnectionStatus();
@@ -53,5 +64,13 @@ export async function getWearConnectionStatus(): Promise<WearConnectionStatus> {
   if (moduleRef.getStatus) {
     return moduleRef.getStatus();
   }
-  return { connected: false, nodes: 0, embeddedApp: false, nodeDetails: [] };
+  return {
+    connected: false,
+    nodes: 0,
+    deliverable: false,
+    appNodes: 0,
+    embeddedApp: false,
+    nodeDetails: [],
+    appNodeDetails: [],
+  };
 }

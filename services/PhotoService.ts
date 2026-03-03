@@ -5,6 +5,7 @@
  * in the `photos` table (migration 003_photos.sql).
  */
 
+import { File } from 'expo-file-system';
 import { supabase } from './supabase';
 import type { Photo } from '../types/photo';
 
@@ -60,8 +61,8 @@ export async function uploadPhoto(
   const filename = `${uid}/${Date.now()}.jpg`;
 
   // ── Upload file via fetch → blob (works reliably on both iOS + Android) ──
-  const fileResponse = await fetch(localUri);
-  const blob = await fileResponse.blob();
+  const file = new File(localUri);
+  const blob = await file.arrayBuffer();
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)

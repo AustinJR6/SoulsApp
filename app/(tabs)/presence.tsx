@@ -28,8 +28,11 @@ export default function PresenceScreen() {
   const [wearStatus, setWearStatus] = useState<WearConnectionStatus>({
     connected: false,
     nodes: 0,
+    deliverable: false,
+    appNodes: 0,
     embeddedApp: false,
     nodeDetails: [],
+    appNodeDetails: [],
   });
   const [avatarDemoTalking, setAvatarDemoTalking] = useState(false);
   const testMode = Array.isArray(params.test) ? params.test[0] : params.test;
@@ -90,7 +93,7 @@ export default function PresenceScreen() {
   };
 
   const sendWearTest = async () => {
-    await sendPresenceEventToWear({
+    const delivered = await sendPresenceEventToWear({
       type: "heart_ping",
       severity: "heart",
       timestamp: new Date().toISOString(),
@@ -99,6 +102,14 @@ export default function PresenceScreen() {
     });
     const nextWear = await getWearConnectionStatus();
     setWearStatus(nextWear);
+    if (!delivered) {
+      Alert.alert(
+        "Watch App Not Reachable",
+        "The phone can see a paired watch, but the Vessel watch companion is not reachable yet. Use a wear-enabled build and install the companion on the watch, or rely on Galaxy Wearable notification mirroring."
+      );
+      return;
+    }
+    Alert.alert("Wear Test Sent", "The direct Presence event was sent to the watch companion.");
   };
 
   const sendMirrorTest = async () => {
@@ -193,13 +204,16 @@ export default function PresenceScreen() {
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>Haptics + Watch</Text>
         <View style={styles.watchHeaderRow}>
-          <View style={[styles.statusChip, wearStatus.connected ? styles.statusChipConnected : styles.statusChipIdle]}>
-            <Text style={styles.statusChipText}>{wearStatus.connected ? "Watch Connected" : "Watch Not Connected"}</Text>
+          <View style={[styles.statusChip, wearStatus.deliverable ? styles.statusChipConnected : styles.statusChipIdle]}>
+            <Text style={styles.statusChipText}>{wearStatus.deliverable ? "Companion Reachable" : wearStatus.connected ? "Watch Paired Only" : "Watch Not Connected"}</Text>
           </View>
           <Text style={styles.helperText}>Nodes: {wearStatus.nodes}</Text>
         </View>
         <Text style={styles.helperText}>
           Galaxy Watch Ultra should work best through Galaxy Wearable notification mirroring first. Direct companion sync stays optional.
+        </Text>
+        <Text style={styles.helperText}>
+          Direct companion targets: {wearStatus.appNodes} | Embedded in this build: {wearStatus.embeddedApp ? "yes" : "no"}
         </Text>
         {wearStatus.nodeDetails.length > 0 ? (
           <View style={styles.nodeList}>
@@ -215,6 +229,16 @@ export default function PresenceScreen() {
             Pair the watch in Wear OS first, then refresh status here. Once connected, the paired watch appears in this list.
           </Text>
         )}
+        {wearStatus.appNodeDetails.length > 0 ? (
+          <View style={styles.nodeList}>
+            {wearStatus.appNodeDetails.map((node) => (
+              <View key={`app-${node.id}`} style={styles.nodeCard}>
+                <Text style={styles.nodeName}>Companion: {node.displayName}</Text>
+                <Text style={styles.nodeMeta}>{node.nearby ? "Nearby" : "Cloud-connected"} | {node.id.slice(0, 8)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <View style={styles.buttonRow}>
           <Pressable style={styles.primaryButton} onPress={() => void pingHeart("heart")}>
             <Text style={styles.primaryButtonText}>Heart Ping</Text>
