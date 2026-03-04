@@ -3,11 +3,12 @@ import { useLocalSearchParams } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Notifications from "expo-notifications";
 import React, { useEffect, useState } from "react";
-import { Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import SylanaAvatar from "../../components/SylanaAvatar";
 import { theme } from "../../constants/theme";
 import { usePresence } from "../../contexts/PresenceContext";
 import { buildAvatarConcept } from "../../services/avatarStudio";
+import { chatService } from "../../services/api";
 import { pingHeart } from "../../services/presenceHaptics";
 import { presenceService } from "../../services/PresenceService";
 import { clearVoiceCache, preloadCommonPhrases, speak, stopSpeaking } from "../../services/presenceVoice";
@@ -39,6 +40,9 @@ export default function PresenceScreen() {
   });
   const [avatarDemoTalking, setAvatarDemoTalking] = useState(false);
   const [studioPersonality, setStudioPersonality] = useState<AvatarPersonalityId>("sylana");
+  const [conceptImages, setConceptImages] = useState<string[]>([]);
+  const [isGeneratingConcepts, setIsGeneratingConcepts] = useState(false);
+  const [conceptError, setConceptError] = useState<string | null>(null);
   const testMode = Array.isArray(params.test) ? params.test[0] : params.test;
   const avatarConcept = buildAvatarConcept(studioPersonality);
 
@@ -171,6 +175,38 @@ export default function PresenceScreen() {
     Alert.alert("Copied", `${label} copied to clipboard.`);
   };
 
+  const generateConceptAssets = async () => {
+    setIsGeneratingConcepts(true);
+    setConceptError(null);
+    setConceptImages([]);
+    try {
+      const prompts = avatarConcept.promptVariants.slice(0, 2);
+      const collected: string[] = [];
+      for (const prompt of prompts) {
+        const result = await chatService.generateImage(prompt, { width: 1024, height: 1024, samples: 1 });
+        const urls = Array.isArray(result.generated_images)
+          ? result.generated_images.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : [];
+        urls.forEach((url) => {
+          if (!collected.includes(url)) {
+            collected.push(url);
+          }
+        });
+      }
+      if (!collected.length) {
+        setConceptError("No concept images returned. Verify Modelslab credits and try again.");
+        return;
+      }
+      setConceptImages(collected);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Concept generation failed";
+      setConceptError(message);
+      Alert.alert("Concept Generation Failed", message);
+    } finally {
+      setIsGeneratingConcepts(false);
+    }
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -266,6 +302,18 @@ export default function PresenceScreen() {
         <View style={styles.studioCard}>
           <Text style={styles.studioText}>{avatarConcept.imagePrompt}</Text>
         </View>
+        <Text style={styles.panelSubtitle}>Prompt Variants</Text>
+        <View style={styles.studioCard}>
+          {avatarConcept.promptVariants.map((variant, index) => (
+            <Text key={variant} style={styles.checklistItem}>{index + 1}. {variant}</Text>
+          ))}
+        </View>
+        <Text style={styles.panelSubtitle}>Accessory Notes</Text>
+        <View style={styles.studioCard}>
+          {avatarConcept.accessoryNotes.map((item) => (
+            <Text key={item} style={styles.checklistItem}>- {item}</Text>
+          ))}
+        </View>
         <Text style={styles.panelSubtitle}>Production Brief</Text>
         <View style={styles.studioCard}>
           <Text style={styles.studioText}>{avatarConcept.productionBrief}</Text>
@@ -294,6 +342,21 @@ export default function PresenceScreen() {
           >
             <Text style={styles.secondaryButtonText}>Copy Asset Checklist</Text>
           </Pressable>
+          <Pressable style={styles.primaryButton} onPress={() => void generateConceptAssets()} disabled={isGeneratingConcepts}>
+            {isGeneratingConcepts ? <ActivityIndicator size="small" color={theme.colors.textPrimary} /> : null}
+            <Text style={styles.primaryButtonText}>{isGeneratingConcepts ? "Generating..." : "Generate Anime Concepts"}</Text>
+          </Pressable>
+          {conceptError ? <Text style={styles.errorText}>{conceptError}</Text> : null}
+          {conceptImages.length > 0 ? (
+            <View style={styles.generatedGrid}>
+              {conceptImages.map((url) => (
+                <Pressable key={url} style={styles.generatedCard} onPress={() => void copyText("Concept image URL", url)}>
+                  <Image source={{ uri: url }} style={styles.generatedImage} resizeMode="cover" />
+                  <Text style={styles.generatedHint}>Tap to copy URL</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -551,6 +614,32 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     lineHeight: 20,
     fontSize: 13,
+  },
+  generatedGrid: {
+    gap: 10,
+  },
+  generatedCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+    overflow: "hidden",
+  },
+  generatedImage: {
+    width: "100%",
+    height: 240,
+    backgroundColor: theme.colors.surface,
+  },
+  generatedHint: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  errorText: {
+    color: theme.colors.danger,
+    fontSize: 12,
+    lineHeight: 18,
   },
   watchHeaderRow: {
     flexDirection: "row",

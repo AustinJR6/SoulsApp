@@ -329,6 +329,29 @@ export const chatService = {
       method: "POST",
       body: JSON.stringify({ token, provider, platform, metadata }),
     }),
+
+  generateImage: async (
+    prompt: string,
+    options: { negativePrompt?: string; width?: number; height?: number; samples?: number; modelId?: string } = {}
+  ): Promise<{
+    provider?: string;
+    prompt?: string;
+    model_id?: string;
+    status?: string;
+    generation_id?: string | number | null;
+    generated_images?: string[];
+  }> =>
+    requestJsonWithFailover("/api/images/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        prompt,
+        negative_prompt: options.negativePrompt ?? "",
+        width: options.width ?? 1024,
+        height: options.height ?? 1024,
+        samples: options.samples ?? 1,
+        model_id: options.modelId,
+      }),
+    }),
 };
 
 export default chatService;

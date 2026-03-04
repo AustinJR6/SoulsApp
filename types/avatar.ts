@@ -14,6 +14,8 @@ export interface AvatarConcept {
   traits: string[];
   palette: string[];
   imagePrompt: string;
+  promptVariants: string[];
   productionBrief: string;
   assetChecklist: string[];
+  accessoryNotes: string[];
 }
