@@ -696,16 +696,41 @@ export default function ChatScreen() {
         const fellBackToDefault = activeConversationMode === "spicy" && response.conversation_mode === "default";
 
         const replyText = formatOutreachWorkflowResponse(String(response.response || ""), activeTools);
-        const aiMessage: IMessage = {
-          _id: Math.random().toString(),
-          text: replyText,
-          createdAt: new Date(),
-          user: {
-            _id: SYSTEM_USER_ID,
-            name: personalityConfig.name,
-            avatar: personalityConfig.avatar,
-          },
+        const baseTimestamp = Date.now();
+        const assistantIdentity = {
+          _id: SYSTEM_USER_ID,
+          name: personalityConfig.name,
+          avatar: personalityConfig.avatar,
         };
+        const assistantMessages: IMessage[] = [];
+        if (replyText.trim().length > 0) {
+          assistantMessages.push({
+            _id: Math.random().toString(),
+            text: replyText,
+            createdAt: new Date(baseTimestamp),
+            user: assistantIdentity,
+          });
+        }
+        const generatedImages = Array.isArray(response.generated_images)
+          ? response.generated_images.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : [];
+        generatedImages.forEach((imageUrl, index) => {
+          assistantMessages.push({
+            _id: `generated-image-${baseTimestamp}-${index}`,
+            text: index === 0 ? `Generated image${response.image_prompt ? `: ${response.image_prompt}` : ""}` : "",
+            image: imageUrl,
+            createdAt: new Date(baseTimestamp + index + 1),
+            user: assistantIdentity,
+          });
+        });
+        if (assistantMessages.length === 0) {
+          assistantMessages.push({
+            _id: Math.random().toString(),
+            text: "I couldn't produce a reply just now.",
+            createdAt: new Date(baseTimestamp),
+            user: assistantIdentity,
+          });
+        }
         const fallbackMessage: IMessage | null = fellBackToDefault
           ? {
               _id: `mode-fallback-${Date.now()}`,
@@ -717,6 +742,18 @@ export default function ChatScreen() {
               },
             }
           : null;
+        const imageErrorMessage: IMessage | null =
+          typeof response.image_generation_error === "string" && response.image_generation_error.trim().length > 0
+            ? {
+                _id: `image-generation-error-${Date.now()}`,
+                text: `Image generation failed: ${response.image_generation_error.trim()}`,
+                createdAt: new Date(baseTimestamp + generatedImages.length + 2),
+                user: {
+                  _id: SYSTEM_USER_ID,
+                  name: "System",
+                },
+              }
+            : null;
 
         setWorkspace((prev) => {
           if (!prev) {
@@ -734,7 +771,14 @@ export default function ChatScreen() {
                 ...thread,
                 backendThreadId: response.thread_id ? String(response.thread_id) : thread.backendThreadId,
                 mode: fellBackToDefault ? "default" : thread.mode,
-                messages: GiftedChat.append(thread.messages, fallbackMessage ? [aiMessage, fallbackMessage] : [aiMessage]),
+                messages: GiftedChat.append(
+                  thread.messages,
+                  [
+                    ...assistantMessages,
+                    ...(imageErrorMessage ? [imageErrorMessage] : []),
+                    ...(fallbackMessage ? [fallbackMessage] : []),
+                  ]
+                ),
                 updatedAt: new Date().toISOString(),
               };
             }),

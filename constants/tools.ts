@@ -3,13 +3,14 @@ import { ToolDescriptor } from "../types";
 export const DEFAULT_TOOL_IDS = ["memories", "web_search"] as const;
 
 export const TOOL_PRESETS: Array<{ id: "chat" | "build" | "work"; label: string; tools: string[] }> = [
-  { id: "chat", label: "Chat", tools: ["memories", "web_search"] },
+  { id: "chat", label: "Chat", tools: ["memories", "web_search", "image_generation"] },
   { id: "build", label: "Build", tools: ["code_execution", "files", "github", "memories"] },
   { id: "work", label: "Work", tools: ["work_sessions", "outreach", "web_search", "memories"] },
 ];
 
 export const TOOL_CATALOG: ToolDescriptor[] = [
   { id: "web_search", label: "Web Search" },
+  { id: "image_generation", label: "Image Generation" },
   { id: "code_execution", label: "Code Execution" },
   { id: "files", label: "Files" },
   { id: "health_data", label: "Health Data" },
@@ -24,6 +25,8 @@ const TOOL_ALIASES: Record<string, string> = {
   web: "web_search",
   websearch: "web_search",
   web_search: "web_search",
+  image_generation: "image_generation",
+  imagegeneration: "image_generation",
   code: "code_execution",
   code_execution: "code_execution",
   terminal: "code_execution",
@@ -41,6 +44,9 @@ const TOOL_ALIASES: Record<string, string> = {
   photos: "photos",
   photo: "photos",
   image: "photos",
+  images: "image_generation",
+  generate_image: "image_generation",
+  image_generator: "image_generation",
   memories: "memories",
   memory: "memories",
   outreach: "outreach",

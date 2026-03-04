@@ -26,6 +26,7 @@ const ICON_SIZE = 14;
 
 const iconByTool: Record<string, React.ComponentType<{ color?: string; size?: number }>> = {
   web_search: Search,
+  image_generation: Image,
   code_execution: Terminal,
   files: FolderOpen,
   health_data: Activity,

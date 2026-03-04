@@ -30,6 +30,10 @@ export interface ChatResponse {
   response: string;
   personality: string;
   conversation_mode?: ConversationMode;
+  generated_images?: string[];
+  image_prompt?: string;
+  image_model?: string;
+  image_generation_error?: string;
   thread_id?: string | number;
   emotion?:
     | string
