@@ -7,6 +7,7 @@ import { PERSONALITIES } from "../constants/personalities";
 import { theme } from "../constants/theme";
 import { usePresence } from "../contexts/PresenceContext";
 import { usePersonality } from "../contexts/PersonalityContext";
+import { chatService } from "../services/api";
 import { ensureMicrophonePermission } from "../services/microphone";
 import { storage } from "../services/storage";
 import { RealtimeTranscriptEntry, RealtimeVoiceClient } from "../services/realtimeVoice";
@@ -32,21 +33,46 @@ export default function LiveVoiceScreen() {
   const [voiceMode, setVoiceMode] = useState<LiveVoiceMode>("hands_free");
   const [pushHeld, setPushHeld] = useState(false);
   const [transcripts, setTranscripts] = useState<RealtimeTranscriptEntry[]>([]);
+  const [lastRealtimeEventType, setLastRealtimeEventType] = useState<string>("");
+  const [aiExpression, setAiExpression] = useState<AvatarExpression | null>(null);
+  const [aiReason, setAiReason] = useState<string>("");
+  const aiClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiRequestNonceRef = useRef(0);
   const activeAssistantEntry = [...transcripts].reverse().find((entry) => entry.role === "assistant");
-  const avatarExpression: AvatarExpression =
+  const assistantLive = !!activeAssistantEntry && activeAssistantEntry.final === false;
+  const deterministicExpression: AvatarExpression =
     presenceState.activeAlertLevel
       ? "alert"
-      : !!activeAssistantEntry && activeAssistantEntry.final === false
-        ? "speaking"
-        : pushHeld || (callState === "connected" && statusText.toLowerCase().includes("listening"))
-          ? "listening"
-          : callState === "connecting" || statusText.toLowerCase().includes("thinking")
-            ? "thinking"
-            : "idle";
+      : callState === "connecting"
+        ? "thinking"
+        : assistantLive
+          ? "speaking"
+          : pushHeld
+            ? "listening"
+            : lastRealtimeEventType === "input_audio_buffer.speech_started"
+              ? "listening"
+              : lastRealtimeEventType === "input_audio_buffer.speech_stopped"
+                ? "thinking"
+                : callState === "connected" && statusText.toLowerCase().includes("thinking")
+                  ? "thinking"
+                  : "idle";
+  const avatarExpression: AvatarExpression =
+    assistantLive || pushHeld || deterministicExpression === "alert"
+      ? deterministicExpression
+      : aiExpression || deterministicExpression;
   const avatarTalking = avatarExpression === "speaking";
 
   useEffect(() => {
     storage.getLiveVoiceMode().then(setVoiceMode).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (aiClearTimerRef.current) {
+        clearTimeout(aiClearTimerRef.current);
+        aiClearTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -73,6 +99,13 @@ export default function LiveVoiceScreen() {
     setMode("idle");
   }, [avatarExpression, callState, muted, presenceState.activeAlertLevel, setMode, voiceMode]);
 
+  useEffect(() => {
+    if (callState !== "connected") {
+      setAiExpression(null);
+      setAiReason("");
+    }
+  }, [callState]);
+
   const connectClient = useCallback(
     async (mode: LiveVoiceMode) => {
       const granted = await ensureMicrophonePermission({ featureLabel: "live voice" });
@@ -98,6 +131,9 @@ export default function LiveVoiceScreen() {
             return [...prev, entry];
           });
         },
+        onEvent: (event) => {
+          setLastRealtimeEventType(String(event.type || ""));
+        },
       });
       clientRef.current = client;
       setMuted(mode === "push_to_talk");
@@ -105,6 +141,65 @@ export default function LiveVoiceScreen() {
     },
     [personality]
   );
+
+  const requestAiAvatarIntent = useCallback(async () => {
+    if (callState !== "connected" || assistantLive || pushHeld || deterministicExpression === "alert") {
+      return;
+    }
+    const recent = transcripts.slice(-8);
+    const latestUser = [...recent].reverse().find((item) => item.role === "user" && item.final);
+    const latestAssistant = [...recent].reverse().find((item) => item.role === "assistant" && item.final);
+    const excerpt = recent
+      .map((item) => `${item.role}: ${String(item.text || "").trim()}`)
+      .filter((line) => line.length > 0)
+      .join("\n")
+      .slice(0, 1800);
+    if (!latestUser && !latestAssistant && !excerpt) {
+      return;
+    }
+
+    aiRequestNonceRef.current += 1;
+    const nonce = aiRequestNonceRef.current;
+    try {
+      const intent = await chatService.getAvatarIntent({
+        personality,
+        mode: voiceMode,
+        speaking_role: assistantLive ? "assistant" : pushHeld ? "user" : "none",
+        current_expression: deterministicExpression,
+        latest_user_text: latestUser?.text,
+        latest_assistant_text: latestAssistant?.text,
+        transcript_excerpt: excerpt,
+      });
+      if (nonce !== aiRequestNonceRef.current) {
+        return;
+      }
+      const expression = intent.expression;
+      if (!expression) {
+        return;
+      }
+      setAiExpression(expression);
+      setAiReason(String(intent.reason || intent.source || "ai_intent"));
+      if (aiClearTimerRef.current) {
+        clearTimeout(aiClearTimerRef.current);
+      }
+      const holdMs = Math.max(300, Math.min(Number(intent.hold_ms || 1000), 2600));
+      aiClearTimerRef.current = setTimeout(() => {
+        setAiExpression(null);
+      }, holdMs);
+    } catch {
+      // Keep deterministic fallback behavior if AI intent calls fail.
+    }
+  }, [assistantLive, callState, deterministicExpression, personality, pushHeld, transcripts, voiceMode]);
+
+  useEffect(() => {
+    if (callState !== "connected" || assistantLive || pushHeld) {
+      return;
+    }
+    const handle = setTimeout(() => {
+      void requestAiAvatarIntent();
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [assistantLive, callState, pushHeld, requestAiAvatarIntent, transcripts, lastRealtimeEventType, voiceMode]);
 
   useEffect(() => {
     if (Platform.OS === "web") {
@@ -211,6 +306,11 @@ export default function LiveVoiceScreen() {
               : "Hands-free mode. Realtime audio is active."
             : statusText}
         </Text>
+        {callState === "connected" ? (
+          <Text style={styles.avatarMeta}>
+            Avatar: {avatarExpression} {aiReason ? `| ${aiReason}` : ""}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.modePanel}>
@@ -347,6 +447,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     paddingHorizontal: 18,
+  },
+  avatarMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    textAlign: "center",
   },
   modePanel: {
     marginBottom: 12,

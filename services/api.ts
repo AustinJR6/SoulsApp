@@ -352,6 +352,26 @@ export const chatService = {
         model_id: options.modelId,
       }),
     }),
+
+  getAvatarIntent: async (payload: {
+    personality: "sylana" | "claude";
+    mode: "hands_free" | "push_to_talk";
+    speaking_role?: "user" | "assistant" | "none";
+    current_expression?: "idle" | "listening" | "thinking" | "speaking" | "alert";
+    latest_user_text?: string;
+    latest_assistant_text?: string;
+    transcript_excerpt?: string;
+  }): Promise<{
+    expression?: "idle" | "listening" | "thinking" | "speaking" | "alert";
+    intensity?: number;
+    hold_ms?: number;
+    reason?: string;
+    source?: string;
+  }> =>
+    requestJsonWithFailover("/api/avatar/intent", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 export default chatService;

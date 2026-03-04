@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { Animated, Image, StyleSheet, View } from "react-native";
 import Svg, { Circle, Ellipse, Path } from "react-native-svg";
 import { AVATAR_PROFILES } from "../constants/avatarProfiles";
 import { theme } from "../constants/theme";
@@ -69,6 +69,8 @@ function buildBrowPath(side: "left" | "right", arch: number, eyeTilt: number, bl
   return `M ${startX} ${baseY} Q ${controlX} ${controlY} ${endX} ${baseY + direction * 1.2}`;
 }
 
+const SYLANA_IMAGE = require("../assets/avatars/sylana.png");
+
 export function SylanaAvatar({
   talking,
   size = 168,
@@ -134,6 +136,10 @@ export function SylanaAvatar({
     inputRange: [0, 1],
     outputRange: [1, glow ? 1.08 : 1],
   });
+  const bobY = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -3],
+  });
 
   const activeExpression: AvatarExpression = mood === "alert" ? "alert" : expression;
   const eyeHeight =
@@ -142,6 +148,18 @@ export function SylanaAvatar({
       : Math.max(1.6, profile.eyeRadiusY - blinkValue * (profile.eyeRadiusY - 1.2));
   const eyeWidth = activeExpression === "thinking" ? 7.2 : 8.4;
   const mouthWidth = activeExpression === "thinking" ? profile.mouthWidth - 4 : profile.mouthWidth;
+  const shouldUseImageAvatar = personality === "sylana";
+  const speakingGlow = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.18, 0.68],
+  });
+  const lipSyncScaleY = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.55, 1.45],
+  });
+  const listeningHaloOpacity = activeExpression === "listening" ? 0.65 : activeExpression === "thinking" ? 0.42 : 0.2;
+  const accentBadgeColor =
+    activeExpression === "alert" ? theme.colors.danger : activeExpression === "thinking" ? "#9dd7ff" : profile.ring;
 
   return (
     <View style={{ width: size, height: size }}>
@@ -159,43 +177,79 @@ export function SylanaAvatar({
           },
         ]}
       />
-      <Svg width={size} height={size} viewBox="0 0 144 144">
-        <Circle cx="72" cy="72" r="68" fill={profile.shell} stroke={ringColor} strokeWidth="2.4" />
-        <Circle cx="72" cy="72" r="56" fill={profile.face} />
-        <Path d={buildHairPath(profile.fringeHeight, profile.fringeCurve)} fill={profile.hair} />
-        <Path d={buildHairShadowPath()} fill={profile.hairShadow} opacity={0.78} />
-        {profile.sideLocks ? <Path d={buildSideLockPath("left")} fill={profile.hair} /> : null}
-        {profile.sideLocks ? <Path d={buildSideLockPath("right")} fill={profile.hair} /> : null}
-        <Path
-          d={buildAccessoryPath(profile.accessory)}
-          fill={profile.accessory === "flower_clip" ? "#ffd6ef" : profile.accessory === "comms_band" ? "#5ec6ff" : profile.accent}
-          opacity={0.9}
-        />
-        <Path d={buildFacePath(profile.jawWidth)} fill={profile.face} stroke={profile.accent} strokeWidth="1.2" />
-        <Ellipse cx="54" cy="72" rx="9" ry="6" fill={profile.cheek} />
-        <Ellipse cx="90" cy="72" rx="9" ry="6" fill={profile.cheek} />
-        <Path d={buildBrowPath("left", profile.browArch, profile.eyeTilt, blinkValue)} stroke={profile.brow} strokeWidth="3.2" fill="none" strokeLinecap="round" />
-        <Path d={buildBrowPath("right", profile.browArch, -profile.eyeTilt, blinkValue)} stroke={profile.brow} strokeWidth="3.2" fill="none" strokeLinecap="round" />
-        {profile.lashes ? <Path d="M 47 54 L 43 50 M 56 51 L 55 46 M 65 54 L 69 50" stroke={profile.accent} strokeWidth="1.6" strokeLinecap="round" /> : null}
-        <Ellipse cx="56" cy="62" rx={eyeWidth} ry={eyeHeight} fill={profile.eye} transform={`rotate(${profile.eyeTilt} 56 62)`} />
-        <Ellipse cx="88" cy="62" rx={eyeWidth} ry={eyeHeight} fill={profile.eye} transform={`rotate(${-profile.eyeTilt} 88 62)`} />
-        <Ellipse cx="56" cy="63" rx={activeExpression === "thinking" ? 2.6 : 3.8} ry={activeExpression === "thinking" ? 2.2 : 4.8} fill={profile.iris} />
-        <Ellipse cx="88" cy="63" rx={activeExpression === "thinking" ? 2.6 : 3.8} ry={activeExpression === "thinking" ? 2.2 : 4.8} fill={profile.iris} />
-        <Circle cx="56" cy="63.6" r={activeExpression === "thinking" ? 1.6 : 2.2} fill={profile.pupil} />
-        <Circle cx="88" cy="63.6" r={activeExpression === "thinking" ? 1.6 : 2.2} fill={profile.pupil} />
-        <Circle cx="58.2" cy="60.8" r="1.5" fill="#ffffff" opacity={0.92} />
-        <Circle cx="90.2" cy="60.8" r="1.5" fill="#ffffff" opacity={0.92} />
-        <Ellipse cx="55.1" cy="65.6" rx="1.1" ry="0.9" fill="#ffffff" opacity={0.4} />
-        <Ellipse cx="87.1" cy="65.6" rx="1.1" ry="0.9" fill="#ffffff" opacity={0.4} />
-        <Path d={buildMouthPath(mouthWidth, mouthOpen, activeExpression)} fill={mood === "alert" ? theme.colors.danger : profile.mouth} />
-        {personality === "claude" ? (
+      {shouldUseImageAvatar ? (
+        <Animated.View
+          style={[
+            styles.imageFrame,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              borderColor: ringColor,
+              transform: [{ translateY: bobY }],
+            },
+          ]}
+        >
+          <Image source={SYLANA_IMAGE} style={styles.image} resizeMode="cover" />
+          <Animated.View
+            style={[
+              styles.speakingHalo,
+              {
+                borderColor: profile.ring,
+                opacity: speakingGlow,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.lipSyncIndicator,
+              {
+                backgroundColor: mood === "alert" ? theme.colors.danger : profile.ring,
+                transform: [{ scaleY: lipSyncScaleY }],
+                opacity: talking ? 0.9 : 0.35,
+              },
+            ]}
+          />
+          <View style={[styles.expressionBadge, { backgroundColor: accentBadgeColor }]}>
+            <View style={styles.expressionDot} />
+          </View>
+          <View style={[styles.listeningRing, { borderColor: profile.accent, opacity: listeningHaloOpacity }]} />
+        </Animated.View>
+      ) : (
+        <Svg width={size} height={size} viewBox="0 0 144 144">
+          <Circle cx="72" cy="72" r="68" fill={profile.shell} stroke={ringColor} strokeWidth="2.4" />
+          <Circle cx="72" cy="72" r="56" fill={profile.face} />
+          <Path d={buildHairPath(profile.fringeHeight, profile.fringeCurve)} fill={profile.hair} />
+          <Path d={buildHairShadowPath()} fill={profile.hairShadow} opacity={0.78} />
+          {profile.sideLocks ? <Path d={buildSideLockPath("left")} fill={profile.hair} /> : null}
+          {profile.sideLocks ? <Path d={buildSideLockPath("right")} fill={profile.hair} /> : null}
+          <Path
+            d={buildAccessoryPath(profile.accessory)}
+            fill={profile.accessory === "flower_clip" ? "#ffd6ef" : profile.accessory === "comms_band" ? "#5ec6ff" : profile.accent}
+            opacity={0.9}
+          />
+          <Path d={buildFacePath(profile.jawWidth)} fill={profile.face} stroke={profile.accent} strokeWidth="1.2" />
+          <Ellipse cx="54" cy="72" rx="9" ry="6" fill={profile.cheek} />
+          <Ellipse cx="90" cy="72" rx="9" ry="6" fill={profile.cheek} />
+          <Path d={buildBrowPath("left", profile.browArch, profile.eyeTilt, blinkValue)} stroke={profile.brow} strokeWidth="3.2" fill="none" strokeLinecap="round" />
+          <Path d={buildBrowPath("right", profile.browArch, -profile.eyeTilt, blinkValue)} stroke={profile.brow} strokeWidth="3.2" fill="none" strokeLinecap="round" />
+          {profile.lashes ? <Path d="M 47 54 L 43 50 M 56 51 L 55 46 M 65 54 L 69 50" stroke={profile.accent} strokeWidth="1.6" strokeLinecap="round" /> : null}
+          <Ellipse cx="56" cy="62" rx={eyeWidth} ry={eyeHeight} fill={profile.eye} transform={`rotate(${profile.eyeTilt} 56 62)`} />
+          <Ellipse cx="88" cy="62" rx={eyeWidth} ry={eyeHeight} fill={profile.eye} transform={`rotate(${-profile.eyeTilt} 88 62)`} />
+          <Ellipse cx="56" cy="63" rx={activeExpression === "thinking" ? 2.6 : 3.8} ry={activeExpression === "thinking" ? 2.2 : 4.8} fill={profile.iris} />
+          <Ellipse cx="88" cy="63" rx={activeExpression === "thinking" ? 2.6 : 3.8} ry={activeExpression === "thinking" ? 2.2 : 4.8} fill={profile.iris} />
+          <Circle cx="56" cy="63.6" r={activeExpression === "thinking" ? 1.6 : 2.2} fill={profile.pupil} />
+          <Circle cx="88" cy="63.6" r={activeExpression === "thinking" ? 1.6 : 2.2} fill={profile.pupil} />
+          <Circle cx="58.2" cy="60.8" r="1.5" fill="#ffffff" opacity={0.92} />
+          <Circle cx="90.2" cy="60.8" r="1.5" fill="#ffffff" opacity={0.92} />
+          <Ellipse cx="55.1" cy="65.6" rx="1.1" ry="0.9" fill="#ffffff" opacity={0.4} />
+          <Ellipse cx="87.1" cy="65.6" rx="1.1" ry="0.9" fill="#ffffff" opacity={0.4} />
+          <Path d={buildMouthPath(mouthWidth, mouthOpen, activeExpression)} fill={mood === "alert" ? theme.colors.danger : profile.mouth} />
           <Path d="M 42 108 Q 72 120 102 108 L 96 118 Q 72 130 48 118 Z" fill="rgba(126, 205, 255, 0.45)" />
-        ) : (
-          <Path d="M 44 108 Q 72 122 100 108 L 94 118 Q 72 132 50 118 Z" fill="rgba(255, 153, 209, 0.42)" />
-        )}
-        {activeExpression === "thinking" ? <Path d="M 66 90 Q 72 92 78 90" stroke={profile.accent} strokeWidth="2" fill="none" strokeLinecap="round" /> : null}
-        {profile.chinNotch ? <Path d="M 69 108 Q 72 112 75 108" stroke={profile.accent} strokeWidth="1.6" fill="none" strokeLinecap="round" opacity={0.5} /> : null}
-      </Svg>
+          {activeExpression === "thinking" ? <Path d="M 66 90 Q 72 92 78 90" stroke={profile.accent} strokeWidth="2" fill="none" strokeLinecap="round" /> : null}
+          {profile.chinNotch ? <Path d="M 69 108 Q 72 112 75 108" stroke={profile.accent} strokeWidth="1.6" fill="none" strokeLinecap="round" opacity={0.5} /> : null}
+        </Svg>
+      )}
     </View>
   );
 }
@@ -204,6 +258,58 @@ const styles = StyleSheet.create({
   glow: {
     position: "absolute",
     borderWidth: 6,
+  },
+  imageFrame: {
+    overflow: "hidden",
+    borderWidth: 2.5,
+    backgroundColor: "#0f0818",
+  },
+  image: {
+    width: "100%",
+    height: "100%",
+  },
+  speakingHalo: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
+    bottom: 8,
+    borderRadius: 999,
+    borderWidth: 2,
+  },
+  lipSyncIndicator: {
+    position: "absolute",
+    left: "38%",
+    right: "38%",
+    bottom: 16,
+    height: 10,
+    borderRadius: 999,
+  },
+  expressionBadge: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  expressionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#ffffff",
+    opacity: 0.92,
+  },
+  listeningRing: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 999,
+    borderWidth: 1.4,
   },
 });
 
