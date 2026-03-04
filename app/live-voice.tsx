@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import SylanaAvatar from "../components/SylanaAvatar";
 import { PERSONALITIES } from "../constants/personalities";
@@ -8,7 +8,9 @@ import { theme } from "../constants/theme";
 import { usePresence } from "../contexts/PresenceContext";
 import { usePersonality } from "../contexts/PersonalityContext";
 import { ensureMicrophonePermission } from "../services/microphone";
+import { storage } from "../services/storage";
 import { RealtimeTranscriptEntry, RealtimeVoiceClient } from "../services/realtimeVoice";
+import { AvatarExpression, LiveVoiceMode } from "../types/avatar";
 
 type PersonalityId = "sylana" | "claude";
 type CallState = "idle" | "connecting" | "connected" | "disconnected" | "failed";
@@ -27,14 +29,37 @@ export default function LiveVoiceScreen() {
   const [callState, setCallState] = useState<CallState>("idle");
   const [statusText, setStatusText] = useState("Preparing live voice...");
   const [muted, setMuted] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<LiveVoiceMode>("hands_free");
+  const [pushHeld, setPushHeld] = useState(false);
   const [transcripts, setTranscripts] = useState<RealtimeTranscriptEntry[]>([]);
   const activeAssistantEntry = [...transcripts].reverse().find((entry) => entry.role === "assistant");
-  const avatarTalking =
-    presenceState.mode === "speaking" || (!!activeAssistantEntry && activeAssistantEntry.final === false);
+  const avatarExpression: AvatarExpression =
+    presenceState.activeAlertLevel
+      ? "alert"
+      : !!activeAssistantEntry && activeAssistantEntry.final === false
+        ? "speaking"
+        : pushHeld || (callState === "connected" && statusText.toLowerCase().includes("listening"))
+          ? "listening"
+          : callState === "connecting" || statusText.toLowerCase().includes("thinking")
+            ? "thinking"
+            : "idle";
+  const avatarTalking = avatarExpression === "speaking";
+
+  useEffect(() => {
+    storage.getLiveVoiceMode().then(setVoiceMode).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (callState === "connected") {
-      setMode(muted ? "thinking" : "listening");
+      if (avatarExpression === "speaking") {
+        setMode("speaking");
+      } else if (avatarExpression === "thinking") {
+        setMode("thinking");
+      } else if (voiceMode === "push_to_talk" && avatarExpression === "idle") {
+        setMode("idle");
+      } else {
+        setMode("listening");
+      }
       return;
     }
     if (callState === "connecting") {
@@ -46,26 +71,16 @@ export default function LiveVoiceScreen() {
       return;
     }
     setMode("idle");
-  }, [callState, muted, presenceState.activeAlertLevel, setMode]);
+  }, [avatarExpression, callState, muted, presenceState.activeAlertLevel, setMode, voiceMode]);
 
-  useEffect(() => {
-    if (Platform.OS === "web") {
-      setCallState("failed");
-      setStatusText("Realtime voice is only enabled in native preview/development builds.");
-      return;
-    }
-
-    let cancelled = false;
-
-    async function startSession() {
+  const connectClient = useCallback(
+    async (mode: LiveVoiceMode) => {
       const granted = await ensureMicrophonePermission({ featureLabel: "live voice" });
       if (!granted) {
-        if (cancelled) return;
         setCallState("failed");
         setStatusText("Microphone access is required for live voice.");
         return;
       }
-      if (cancelled) return;
 
       const client = new RealtimeVoiceClient({
         onStateChange: (state, detail) => {
@@ -85,14 +100,26 @@ export default function LiveVoiceScreen() {
         },
       });
       clientRef.current = client;
+      setMuted(mode === "push_to_talk");
+      await client.connect(personality, mode);
+    },
+    [personality]
+  );
 
-      client.connect(personality).catch((error) => {
-        setCallState("failed");
-        setStatusText(error instanceof Error ? error.message : "Failed to start realtime voice");
-      });
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      setCallState("failed");
+      setStatusText("Realtime voice is only enabled in native preview/development builds.");
+      return;
     }
 
-    startSession();
+    let cancelled = false;
+
+    connectClient(voiceMode).catch((error) => {
+      if (cancelled) return;
+      setCallState("failed");
+      setStatusText(error instanceof Error ? error.message : "Failed to start realtime voice");
+    });
 
     return () => {
       cancelled = true;
@@ -100,12 +127,24 @@ export default function LiveVoiceScreen() {
       clientRef.current = null;
       setMode("idle");
     };
-  }, [personality, setMode]);
+  }, [connectClient, personality, setMode, voiceMode]);
 
   const toggleMute = () => {
+    if (voiceMode === "push_to_talk") {
+      return;
+    }
     const next = !muted;
     setMuted(next);
     clientRef.current?.setMuted(next);
+  };
+
+  const toggleVoiceMode = async (nextMode: LiveVoiceMode) => {
+    if (nextMode === voiceMode) {
+      return;
+    }
+    setVoiceMode(nextMode);
+    setPushHeld(false);
+    await storage.setLiveVoiceMode(nextMode);
   };
 
   const endCall = () => {
@@ -117,43 +156,29 @@ export default function LiveVoiceScreen() {
     clientRef.current?.disconnect();
     clientRef.current = null;
     setTranscripts([]);
-    setMuted(false);
+    setMuted(voiceMode === "push_to_talk");
     setCallState("idle");
     setStatusText("Reconnecting...");
+    connectClient(voiceMode).catch((error) => {
+      setCallState("failed");
+      setStatusText(error instanceof Error ? error.message : "Reconnect failed");
+    });
+  };
 
-    async function doReconnect() {
-      const granted = await ensureMicrophonePermission({ featureLabel: "live voice" });
-      if (!granted) {
-        setCallState("failed");
-        setStatusText("Microphone access is required for live voice.");
-        return;
-      }
-
-      const client = new RealtimeVoiceClient({
-        onStateChange: (state, detail) => {
-          setCallState(state);
-          if (detail) setStatusText(detail);
-        },
-        onTranscript: (entry) => {
-          setTranscripts((prev) => {
-            const idx = prev.findIndex((item) => item.id === entry.id);
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = entry;
-              return next;
-            }
-            return [...prev, entry];
-          });
-        },
-      });
-      clientRef.current = client;
-      client.connect(personality).catch((error) => {
-        setCallState("failed");
-        setStatusText(error instanceof Error ? error.message : "Reconnect failed");
-      });
+  const handlePushToTalkStart = () => {
+    if (voiceMode !== "push_to_talk" || callState !== "connected") {
+      return;
     }
+    setPushHeld(true);
+    clientRef.current?.beginPushToTalk();
+  };
 
-    doReconnect();
+  const handlePushToTalkEnd = () => {
+    if (voiceMode !== "push_to_talk") {
+      return;
+    }
+    setPushHeld(false);
+    clientRef.current?.endPushToTalk();
   };
 
   return (
@@ -175,11 +200,35 @@ export default function LiveVoiceScreen() {
         <SylanaAvatar
           talking={avatarTalking}
           mood={presenceState.activeAlertLevel ? "alert" : "warm"}
+          personality={personality}
+          expression={avatarExpression}
           size={196}
         />
         <Text style={styles.orbLabel}>
-          {callState === "connected" ? "Open mic, realtime audio active" : statusText}
+          {callState === "connected"
+            ? voiceMode === "push_to_talk"
+              ? "Push to talk mode. Hold the button below, then release to send."
+              : "Hands-free mode. Realtime audio is active."
+            : statusText}
         </Text>
+      </View>
+
+      <View style={styles.modePanel}>
+        <Text style={styles.modeLabel}>Voice Mode</Text>
+        <View style={styles.modeSwitcher}>
+          <Pressable
+            style={[styles.modeChip, voiceMode === "hands_free" && styles.modeChipActive]}
+            onPress={() => void toggleVoiceMode("hands_free")}
+          >
+            <Text style={styles.modeChipText}>Hands-Free</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeChip, voiceMode === "push_to_talk" && styles.modeChipActive]}
+            onPress={() => void toggleVoiceMode("push_to_talk")}
+          >
+            <Text style={styles.modeChipText}>Push to Talk</Text>
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView style={styles.transcriptPanel} contentContainerStyle={styles.transcriptContent}>
@@ -203,14 +252,26 @@ export default function LiveVoiceScreen() {
         ))}
       </ScrollView>
 
+      {voiceMode === "push_to_talk" ? (
+        <Pressable
+          style={[styles.pushToTalkButton, pushHeld && styles.pushToTalkButtonActive]}
+          onPressIn={handlePushToTalkStart}
+          onPressOut={handlePushToTalkEnd}
+        >
+          <Ionicons name={pushHeld ? "radio-button-on" : "mic"} size={22} color={theme.colors.textPrimary} />
+          <Text style={styles.pushToTalkText}>{pushHeld ? "Release to Send" : "Hold to Talk"}</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.controls}>
         <Pressable style={styles.controlButton} onPress={reconnect}>
           <Ionicons name="refresh" size={20} color={theme.colors.textPrimary} />
           <Text style={styles.controlText}>Reconnect</Text>
         </Pressable>
         <Pressable
-          style={[styles.controlButton, muted && styles.controlButtonActive]}
+          style={[styles.controlButton, muted && styles.controlButtonActive, voiceMode === "push_to_talk" && styles.controlButtonDisabled]}
           onPress={toggleMute}
+          disabled={voiceMode === "push_to_talk"}
         >
           <Ionicons
             name={muted ? "mic-off-outline" : "mic-outline"}
@@ -287,6 +348,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     paddingHorizontal: 18,
   },
+  modePanel: {
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    gap: 10,
+  },
+  modeLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  modeSwitcher: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  modeChip: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modeChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: "rgba(168,85,247,0.18)",
+  },
+  modeChipText: {
+    color: theme.colors.textPrimary,
+    fontWeight: "700",
+  },
   transcriptPanel: {
     flex: 1,
     borderWidth: 1,
@@ -334,6 +432,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
+  pushToTalkButton: {
+    marginTop: 14,
+    marginBottom: 4,
+    minHeight: 72,
+    borderRadius: 22,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  pushToTalkButtonActive: {
+    backgroundColor: "rgba(168,85,247,0.28)",
+    borderColor: theme.colors.accent,
+  },
+  pushToTalkText: {
+    color: theme.colors.textPrimary,
+    fontWeight: "800",
+    fontSize: 15,
+  },
   controls: {
     flexDirection: "row",
     gap: 10,
@@ -353,6 +472,9 @@ const styles = StyleSheet.create({
   controlButtonActive: {
     backgroundColor: "rgba(168,85,247,0.25)",
     borderColor: theme.colors.accent,
+  },
+  controlButtonDisabled: {
+    opacity: 0.46,
   },
   endButton: {
     backgroundColor: theme.colors.danger,

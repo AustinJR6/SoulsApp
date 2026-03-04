@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import * as Notifications from "expo-notifications";
 import React, { useEffect, useState } from "react";
 import { Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import SylanaAvatar from "../../components/SylanaAvatar";
 import { theme } from "../../constants/theme";
 import { usePresence } from "../../contexts/PresenceContext";
+import { buildAvatarConcept } from "../../services/avatarStudio";
 import { pingHeart } from "../../services/presenceHaptics";
 import { presenceService } from "../../services/PresenceService";
 import { clearVoiceCache, preloadCommonPhrases, speak, stopSpeaking } from "../../services/presenceVoice";
@@ -14,6 +16,7 @@ import {
   sendPresenceEventToWear,
   WearConnectionStatus,
 } from "../../services/native/WearPresence";
+import { AvatarPersonalityId } from "../../types/avatar";
 import { PresenceLog } from "../../types/presence";
 
 function formatDate(value: string) {
@@ -35,7 +38,9 @@ export default function PresenceScreen() {
     appNodeDetails: [],
   });
   const [avatarDemoTalking, setAvatarDemoTalking] = useState(false);
+  const [studioPersonality, setStudioPersonality] = useState<AvatarPersonalityId>("sylana");
   const testMode = Array.isArray(params.test) ? params.test[0] : params.test;
+  const avatarConcept = buildAvatarConcept(studioPersonality);
 
   async function loadData() {
     const [nextLogs, nextWear] = await Promise.all([presenceService.listLogs(), getWearConnectionStatus()]);
@@ -161,6 +166,11 @@ export default function PresenceScreen() {
     await loadData();
   };
 
+  const copyText = async (label: string, value: string) => {
+    await Clipboard.setStringAsync(value);
+    Alert.alert("Copied", `${label} copied to clipboard.`);
+  };
+
   return (
     <ScrollView
       style={styles.container}
@@ -172,6 +182,8 @@ export default function PresenceScreen() {
           <SylanaAvatar
             talking={avatarDemoTalking || state.mode === "speaking" || state.mode === "listening"}
             mood={state.activeAlertLevel ? "alert" : "warm"}
+            personality="sylana"
+            expression={state.activeAlertLevel ? "alert" : state.mode === "speaking" ? "speaking" : state.mode === "listening" ? "listening" : state.mode === "thinking" ? "thinking" : "idle"}
             size={160}
           />
         </View>
@@ -197,6 +209,90 @@ export default function PresenceScreen() {
           </Pressable>
           <Pressable style={styles.secondaryButton} onPress={() => void clearVoiceCache()}>
             <Text style={styles.secondaryButtonText}>Clear Cache</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.panel}>
+        <Text style={styles.panelTitle}>Avatar Studio</Text>
+        <Text style={styles.helperText}>
+          Use this workflow to let each personality define its own look, generate concept prompts, and then convert the winning concept into layered animation assets.
+        </Text>
+        <View style={styles.buttonRow}>
+          <Pressable
+            style={[styles.secondaryButton, studioPersonality === "sylana" && styles.personalityChipActive]}
+            onPress={() => setStudioPersonality("sylana")}
+          >
+            <Text style={styles.secondaryButtonText}>Sylana</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.secondaryButton, studioPersonality === "claude" && styles.personalityChipActive]}
+            onPress={() => setStudioPersonality("claude")}
+          >
+            <Text style={styles.secondaryButtonText}>Claude</Text>
+          </Pressable>
+        </View>
+        <View style={styles.avatarStudioHero}>
+          <SylanaAvatar
+            talking={avatarDemoTalking}
+            personality={studioPersonality}
+            mood="warm"
+            expression={avatarDemoTalking ? "speaking" : "idle"}
+            size={118}
+          />
+          <View style={styles.avatarStudioText}>
+            <Text style={styles.logType}>{avatarConcept.codename}</Text>
+            <Text style={styles.logSummary}>{avatarConcept.visualDirection}</Text>
+            <Text style={styles.helperText}>{avatarConcept.story}</Text>
+          </View>
+        </View>
+        <View style={styles.tagWrap}>
+          {avatarConcept.traits.map((trait) => (
+            <View key={trait} style={styles.tagChip}>
+              <Text style={styles.tagChipText}>{trait}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.panelSubtitle}>Palette</Text>
+        <View style={styles.paletteRow}>
+          {avatarConcept.palette.map((color) => (
+            <View key={color} style={styles.paletteChip}>
+              <View style={[styles.paletteSwatch, { backgroundColor: color }]} />
+              <Text style={styles.paletteLabel}>{color}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.panelSubtitle}>Concept Prompt</Text>
+        <View style={styles.studioCard}>
+          <Text style={styles.studioText}>{avatarConcept.imagePrompt}</Text>
+        </View>
+        <Text style={styles.panelSubtitle}>Production Brief</Text>
+        <View style={styles.studioCard}>
+          <Text style={styles.studioText}>{avatarConcept.productionBrief}</Text>
+        </View>
+        <Text style={styles.panelSubtitle}>Asset Checklist</Text>
+        <View style={styles.studioCard}>
+          {avatarConcept.assetChecklist.map((item) => (
+            <Text key={item} style={styles.checklistItem}>- {item}</Text>
+          ))}
+        </View>
+        <View style={styles.buttonColumn}>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void copyText("Concept prompt", avatarConcept.imagePrompt)}>
+            <Text style={styles.secondaryButtonText}>Copy Concept Prompt</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButtonWide} onPress={() => void copyText("Production brief", avatarConcept.productionBrief)}>
+            <Text style={styles.secondaryButtonText}>Copy Production Brief</Text>
+          </Pressable>
+          <Pressable
+            style={styles.secondaryButtonWide}
+            onPress={() =>
+              void copyText(
+                "Asset checklist",
+                avatarConcept.assetChecklist.map((item, index) => `${index + 1}. ${item}`).join("\n")
+              )
+            }
+          >
+            <Text style={styles.secondaryButtonText}>Copy Asset Checklist</Text>
           </Pressable>
         </View>
       </View>
@@ -334,6 +430,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 18,
   },
+  panelSubtitle: {
+    color: theme.colors.textPrimary,
+    fontWeight: "800",
+    fontSize: 14,
+  },
   helperText: {
     color: theme.colors.textMuted,
     fontSize: 12,
@@ -344,6 +445,10 @@ const styles = StyleSheet.create({
   },
   buttonColumn: {
     gap: 10,
+  },
+  personalityChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: "rgba(168,85,247,0.18)",
   },
   primaryButton: {
     flex: 1,
@@ -381,6 +486,71 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: theme.colors.textSecondary,
     fontWeight: "700",
+  },
+  avatarStudioHero: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  avatarStudioText: {
+    flex: 1,
+    gap: 4,
+  },
+  tagWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  tagChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceElevated,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tagChipText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  paletteRow: {
+    gap: 8,
+  },
+  paletteChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  paletteSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  paletteLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  studioCard: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 6,
+  },
+  studioText: {
+    color: theme.colors.textPrimary,
+    lineHeight: 20,
+    fontSize: 13,
+  },
+  checklistItem: {
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
+    fontSize: 13,
   },
   watchHeaderRow: {
     flexDirection: "row",

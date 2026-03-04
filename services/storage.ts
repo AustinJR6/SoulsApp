@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { IMessage } from "react-native-gifted-chat";
 import { DEFAULT_PERSONALITY } from "../constants/personalities";
 import { DEFAULT_TOOL_IDS, sanitizeTools } from "../constants/tools";
+import { LiveVoiceMode } from "../types/avatar";
 import { ChatWorkspace, ConversationMode, Personality } from "../types";
 
 type PersonalityId = Personality["id"];
@@ -28,6 +29,7 @@ const KEYS = {
   CHAT_WORKSPACE: "@vessel_chat_workspace",
   TOOL_DEFAULTS_BY_PERSONALITY: "@vessel_tool_defaults_by_personality",
   MODE_DEFAULTS_BY_PERSONALITY: "@vessel_mode_defaults_by_personality",
+  LIVE_VOICE_MODE: "@vessel_live_voice_mode",
   USER_PREFERENCES: "@vessel_preferences",
 };
 
@@ -222,6 +224,15 @@ export const storage = {
 
   setChatWorkspace: async (workspace: ChatWorkspace): Promise<void> => {
     await ensureWorkspaceSaved(workspace);
+  },
+
+  getLiveVoiceMode: async (): Promise<LiveVoiceMode> => {
+    const raw = await AsyncStorage.getItem(KEYS.LIVE_VOICE_MODE);
+    return raw === "push_to_talk" ? "push_to_talk" : "hands_free";
+  },
+
+  setLiveVoiceMode: async (mode: LiveVoiceMode): Promise<void> => {
+    await AsyncStorage.setItem(KEYS.LIVE_VOICE_MODE, mode === "push_to_talk" ? "push_to_talk" : "hands_free");
   },
 
   deleteThread: async (threadId: string): Promise<void> => {

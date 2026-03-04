@@ -8,6 +8,7 @@ import {
 } from "react-native-webrtc";
 import type RTCDataChannel from "react-native-webrtc/lib/typescript/RTCDataChannel";
 import { createRealtimeVoiceSession } from "./voice";
+import { LiveVoiceMode } from "../types/avatar";
 
 type PersonalityId = "sylana" | "claude";
 type CallState = "idle" | "connecting" | "connected" | "disconnected" | "failed";
@@ -35,15 +36,21 @@ export class RealtimeVoiceClient {
   private dataChannel: RTCDataChannel | null = null;
   private callbacks: RealtimeVoiceCallbacks;
   private transcriptCache = new Map<string, RealtimeTranscriptEntry>();
+  private mode: LiveVoiceMode = "hands_free";
+  private requestedVoice: string | null = null;
+  private dataChannelOpen = false;
+  private pendingSessionConfig = false;
+  private pushToTalkActive = false;
 
   constructor(callbacks: RealtimeVoiceCallbacks = {}) {
     this.callbacks = callbacks;
   }
 
-  async connect(personality: PersonalityId) {
+  async connect(personality: PersonalityId, mode: LiveVoiceMode = "hands_free") {
     if (Platform.OS === "web") {
       throw new Error("Realtime voice is only configured for native builds.");
     }
+    this.mode = mode;
 
     this.callbacks.onStateChange?.("connecting", "Opening microphone and peer connection");
     await setAudioModeAsync({
@@ -75,7 +82,9 @@ export class RealtimeVoiceClient {
 
     this.dataChannel = this.peerConnection.createDataChannel("oai-events") as RTCDataChannel;
     this.bindListener(this.dataChannel, "open", () => {
-      this.callbacks.onStateChange?.("connected", "Listening");
+      this.dataChannelOpen = true;
+      this.flushSessionConfig();
+      this.callbacks.onStateChange?.("connected", this.mode === "push_to_talk" ? "Push to talk ready" : "Listening");
     });
     this.bindListener(this.dataChannel, "message", (event: { data?: unknown }) => {
       try {
@@ -92,6 +101,7 @@ export class RealtimeVoiceClient {
       video: false,
     })) as MediaStream;
     this.localStream.getTracks().forEach((track) => {
+      track.enabled = mode !== "push_to_talk";
       this.peerConnection?.addTrack(track, this.localStream!);
     });
 
@@ -101,11 +111,12 @@ export class RealtimeVoiceClient {
     await this.peerConnection.setLocalDescription(offer);
     await this.waitForIceGathering();
 
-    const session = await createRealtimeVoiceSession(personality);
+    const session = await createRealtimeVoiceSession(personality, mode);
     const clientSecret = String(session.client_secret?.value || "").trim();
     if (!clientSecret) {
       throw new Error("Realtime backend did not return a client secret");
     }
+    this.requestedVoice = typeof session.requested_voice === "string" ? session.requested_voice : null;
 
     const answerResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
       method: "POST",
@@ -126,6 +137,8 @@ export class RealtimeVoiceClient {
         sdp: answerSdp,
       })
     );
+    this.pendingSessionConfig = true;
+    this.flushSessionConfig();
     this.callbacks.onStateChange?.("connected", `Connected to ${session.personality || personality}`);
   }
 
@@ -135,15 +148,52 @@ export class RealtimeVoiceClient {
     });
   }
 
+  setMode(mode: LiveVoiceMode) {
+    this.mode = mode;
+    this.pendingSessionConfig = true;
+    if (mode === "push_to_talk") {
+      this.pushToTalkActive = false;
+      this.setMuted(true);
+    } else {
+      this.setMuted(false);
+    }
+    this.flushSessionConfig();
+  }
+
+  beginPushToTalk() {
+    if (this.mode !== "push_to_talk") {
+      return;
+    }
+    this.pushToTalkActive = true;
+    this.sendEvent({ type: "response.cancel" });
+    this.sendEvent({ type: "input_audio_buffer.clear" });
+    this.setMuted(false);
+    this.callbacks.onStateChange?.("connected", "Listening...");
+  }
+
+  endPushToTalk() {
+    if (this.mode !== "push_to_talk" || !this.pushToTalkActive) {
+      return;
+    }
+    this.pushToTalkActive = false;
+    this.setMuted(true);
+    this.sendEvent({ type: "input_audio_buffer.commit" });
+    this.sendEvent({ type: "response.create" });
+    this.callbacks.onStateChange?.("connected", "Thinking...");
+  }
+
   disconnect() {
     this.dataChannel?.close();
     this.dataChannel = null;
+    this.dataChannelOpen = false;
     this.peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
     this.peerConnection?.close();
     this.peerConnection = null;
     this.localStream?.getTracks().forEach((track) => track.stop());
     this.localStream = null;
     this.transcriptCache.clear();
+    this.pendingSessionConfig = false;
+    this.pushToTalkActive = false;
     setAudioModeAsync({
       allowsRecording: false,
       playsInSilentMode: true,
@@ -187,6 +237,43 @@ export class RealtimeVoiceClient {
       eventTarget.onopen = handler;
     } else if (eventName === "message") {
       eventTarget.onmessage = handler;
+    }
+  }
+
+  private flushSessionConfig() {
+    if (!this.pendingSessionConfig || !this.dataChannelOpen) {
+      return;
+    }
+    this.sendEvent({
+      type: "session.update",
+      session: {
+        audio: {
+          input: {
+            turn_detection:
+              this.mode === "hands_free"
+                ? {
+                    type: "semantic_vad",
+                    eagerness: "medium",
+                    create_response: true,
+                    interrupt_response: true,
+                  }
+                : null,
+          },
+          output: this.requestedVoice ? { voice: this.requestedVoice } : undefined,
+        },
+      },
+    });
+    this.pendingSessionConfig = false;
+  }
+
+  private sendEvent(payload: Record<string, unknown>) {
+    if (!this.dataChannelOpen || !this.dataChannel) {
+      return;
+    }
+    try {
+      this.dataChannel.send(JSON.stringify(payload));
+    } catch {
+      // Ignore transient data channel send failures.
     }
   }
 

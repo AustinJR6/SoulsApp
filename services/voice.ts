@@ -1,5 +1,6 @@
 import { requestJsonWithFailover, requestWithFailover } from "./api";
 import { speak, stopSpeaking } from "./presenceVoice";
+import { LiveVoiceMode } from "../types/avatar";
 
 type PersonalityId = "sylana" | "claude";
 
@@ -13,6 +14,7 @@ interface RealtimeSessionResponse {
   id?: string;
   client_secret?: { value?: string };
   personality?: string;
+  requested_voice?: string;
   [key: string]: unknown;
 }
 
@@ -57,9 +59,12 @@ export async function transcribeRecordedAudio(uri: string, personality: Personal
   return (text ? JSON.parse(text) : {}) as TranscriptionResponse;
 }
 
-export async function createRealtimeVoiceSession(personality: PersonalityId): Promise<RealtimeSessionResponse> {
+export async function createRealtimeVoiceSession(
+  personality: PersonalityId,
+  mode: LiveVoiceMode = "hands_free"
+): Promise<RealtimeSessionResponse> {
   return requestJsonWithFailover<RealtimeSessionResponse>("/api/voice/realtime/session", {
     method: "POST",
-    body: JSON.stringify({ personality }),
+    body: JSON.stringify({ personality, mode }),
   });
 }
