@@ -27,6 +27,7 @@ export default function LiveVoiceScreen() {
   const personalityConfig = PERSONALITIES[personality];
 
   const clientRef = useRef<RealtimeVoiceClient | null>(null);
+  const endingRef = useRef(false);
   const [callState, setCallState] = useState<CallState>("idle");
   const [statusText, setStatusText] = useState("Preparing live voice...");
   const [muted, setMuted] = useState(false);
@@ -117,10 +118,16 @@ export default function LiveVoiceScreen() {
 
       const client = new RealtimeVoiceClient({
         onStateChange: (state, detail) => {
+          if (endingRef.current) {
+            return;
+          }
           setCallState(state);
           if (detail) setStatusText(detail);
         },
         onTranscript: (entry) => {
+          if (endingRef.current) {
+            return;
+          }
           setTranscripts((prev) => {
             const idx = prev.findIndex((item) => item.id === entry.id);
             if (idx >= 0) {
@@ -132,6 +139,9 @@ export default function LiveVoiceScreen() {
           });
         },
         onEvent: (event) => {
+          if (endingRef.current) {
+            return;
+          }
           setLastRealtimeEventType(String(event.type || ""));
         },
       });
@@ -202,6 +212,7 @@ export default function LiveVoiceScreen() {
   }, [assistantLive, callState, pushHeld, requestAiAvatarIntent, transcripts, lastRealtimeEventType, voiceMode]);
 
   useEffect(() => {
+    endingRef.current = false;
     if (Platform.OS === "web") {
       setCallState("failed");
       setStatusText("Realtime voice is only enabled in native preview/development builds.");
@@ -218,6 +229,7 @@ export default function LiveVoiceScreen() {
 
     return () => {
       cancelled = true;
+      endingRef.current = true;
       clientRef.current?.disconnect();
       clientRef.current = null;
       setMode("idle");
@@ -243,11 +255,20 @@ export default function LiveVoiceScreen() {
   };
 
   const endCall = () => {
+    endingRef.current = true;
+    setStatusText("Ending call...");
+    setCallState("disconnected");
+    setAiExpression(null);
+    setAiReason("");
+    setPushHeld(false);
     clientRef.current?.disconnect();
+    clientRef.current = null;
+    setMode("idle");
     router.back();
   };
 
   const reconnect = () => {
+    endingRef.current = false;
     clientRef.current?.disconnect();
     clientRef.current = null;
     setTranscripts([]);

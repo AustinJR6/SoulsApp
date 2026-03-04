@@ -153,9 +153,13 @@ export function SylanaAvatar({
     inputRange: [0, 1],
     outputRange: [0.18, 0.68],
   });
-  const lipSyncScaleY = pulse.interpolate({
+  const speakingRingScale = pulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.55, 1.45],
+    outputRange: [1, 1.08],
+  });
+  const speakingRingOpacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.16, 0.46],
   });
   const listeningHaloOpacity = activeExpression === "listening" ? 0.65 : activeExpression === "thinking" ? 0.42 : 0.2;
   const accentBadgeColor =
@@ -202,11 +206,11 @@ export function SylanaAvatar({
           />
           <Animated.View
             style={[
-              styles.lipSyncIndicator,
+              styles.speakingRing,
               {
-                backgroundColor: mood === "alert" ? theme.colors.danger : profile.ring,
-                transform: [{ scaleY: lipSyncScaleY }],
-                opacity: talking ? 0.9 : 0.35,
+                borderColor: mood === "alert" ? theme.colors.danger : profile.ring,
+                transform: [{ scale: speakingRingScale }],
+                opacity: talking ? speakingRingOpacity : 0.08,
               },
             ]}
           />
@@ -277,13 +281,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
   },
-  lipSyncIndicator: {
+  speakingRing: {
     position: "absolute",
-    left: "38%",
-    right: "38%",
-    bottom: 16,
-    height: 10,
-    borderRadius: 999,
+    top: 4,
+    left: 4,
+    right: 4,
+    bottom: 4,
+    borderRadius: 9999,
+    borderWidth: 2.2,
   },
   expressionBadge: {
     position: "absolute",

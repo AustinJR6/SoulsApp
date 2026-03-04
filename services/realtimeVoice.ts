@@ -41,6 +41,8 @@ export class RealtimeVoiceClient {
   private dataChannelOpen = false;
   private pendingSessionConfig = false;
   private pushToTalkActive = false;
+  private terminated = false;
+  private connectNonce = 0;
 
   constructor(callbacks: RealtimeVoiceCallbacks = {}) {
     this.callbacks = callbacks;
@@ -51,6 +53,8 @@ export class RealtimeVoiceClient {
       throw new Error("Realtime voice is only configured for native builds.");
     }
     this.mode = mode;
+    this.terminated = false;
+    const nonce = ++this.connectNonce;
 
     this.callbacks.onStateChange?.("connecting", "Opening microphone and peer connection");
     await setAudioModeAsync({
@@ -59,6 +63,7 @@ export class RealtimeVoiceClient {
       shouldPlayInBackground: false,
       interruptionMode: "duckOthers",
     });
+    this.ensureConnectionActive(nonce);
 
     this.peerConnection = new RTCPeerConnection(RTC_CONFIG);
     this.bindListener(this.peerConnection, "connectionstatechange", () => {
@@ -100,6 +105,7 @@ export class RealtimeVoiceClient {
       audio: true,
       video: false,
     })) as MediaStream;
+    this.ensureConnectionActive(nonce);
     this.localStream.getTracks().forEach((track) => {
       track.enabled = mode !== "push_to_talk";
       this.peerConnection?.addTrack(track, this.localStream!);
@@ -108,10 +114,14 @@ export class RealtimeVoiceClient {
     const offer = await this.peerConnection.createOffer({
       offerToReceiveAudio: true,
     });
+    this.ensureConnectionActive(nonce);
     await this.peerConnection.setLocalDescription(offer);
+    this.ensureConnectionActive(nonce);
     await this.waitForIceGathering();
+    this.ensureConnectionActive(nonce);
 
     const session = await createRealtimeVoiceSession(personality, mode);
+    this.ensureConnectionActive(nonce);
     const clientSecret = String(session.client_secret?.value || "").trim();
     if (!clientSecret) {
       throw new Error("Realtime backend did not return a client secret");
@@ -127,6 +137,7 @@ export class RealtimeVoiceClient {
       },
       body: this.peerConnection.localDescription?.sdp || "",
     });
+    this.ensureConnectionActive(nonce);
     const answerSdp = await answerResponse.text();
     if (!answerResponse.ok || !answerSdp.trim()) {
       throw new Error(answerSdp || "Realtime call creation failed");
@@ -137,6 +148,7 @@ export class RealtimeVoiceClient {
         sdp: answerSdp,
       })
     );
+    this.ensureConnectionActive(nonce);
     this.pendingSessionConfig = true;
     this.flushSessionConfig();
     this.callbacks.onStateChange?.("connected", `Connected to ${session.personality || personality}`);
@@ -183,10 +195,15 @@ export class RealtimeVoiceClient {
   }
 
   disconnect() {
+    this.terminated = true;
+    this.connectNonce += 1;
+    this.sendEvent({ type: "response.cancel" });
+    this.sendEvent({ type: "input_audio_buffer.clear" });
     this.dataChannel?.close();
     this.dataChannel = null;
     this.dataChannelOpen = false;
     this.peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
+    this.peerConnection?.getReceivers().forEach((receiver) => receiver.track?.stop());
     this.peerConnection?.close();
     this.peerConnection = null;
     this.localStream?.getTracks().forEach((track) => track.stop());
@@ -201,6 +218,12 @@ export class RealtimeVoiceClient {
       interruptionMode: "duckOthers",
     }).catch(() => {});
     this.callbacks.onStateChange?.("disconnected", "Live voice ended");
+  }
+
+  private ensureConnectionActive(nonce: number) {
+    if (this.terminated || nonce !== this.connectNonce) {
+      throw new Error("Live voice session ended");
+    }
   }
 
   private async waitForIceGathering() {
