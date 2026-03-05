@@ -68,7 +68,7 @@ const createThread = (
   return {
     id: `thread_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     personality,
-    mode: personality === "sylana" && mode === "spicy" ? "spicy" : "default",
+    mode: mode === "spicy" ? "spicy" : "default",
     title: "New chat",
     projectId,
     backendThreadId: null,
@@ -575,7 +575,7 @@ export default function ChatScreen() {
   }, [activeTools, updateActiveThreadTools]);
 
   const updateActiveThreadMode = useCallback((nextMode: ConversationMode) => {
-    if (!activeThread || currentPersonality !== "sylana") {
+    if (!activeThread) {
       return;
     }
 
@@ -615,12 +615,12 @@ export default function ChatScreen() {
     setModeDefaultsByPersonality((prev) => {
       const next = {
         ...prev,
-        sylana: normalizedMode,
+        [activeThread.personality]: normalizedMode,
       };
-      storage.setModeDefaultsByPersonality({ sylana: normalizedMode }).catch(() => {});
+      storage.setModeDefaultsByPersonality({ [activeThread.personality]: normalizedMode }).catch(() => {});
       return next;
     });
-  }, [activeThread, currentPersonality]);
+  }, [activeThread]);
 
   const sendTextMessage = useCallback(
     async (text: string, imageAttachments?: ChatImageAttachment[]) => {

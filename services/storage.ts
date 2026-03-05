@@ -72,7 +72,7 @@ const createEmptyWorkspace = (): ChatWorkspace => ({
 const normalizeConversationMode = (
   mode: unknown,
   personality: PersonalityId
-): ConversationMode => (mode === "spicy" && personality === "sylana" ? "spicy" : "default");
+): ConversationMode => (mode === "spicy" && (personality === "sylana" || personality === "claude") ? "spicy" : "default");
 
 const normalizeWorkspace = (workspace: StoredWorkspace | ChatWorkspace): ChatWorkspace => {
   const normalized = createEmptyWorkspace();
