@@ -359,9 +359,6 @@ export default function ChatScreen() {
     [activeThread?.tools, currentPersonality, toolDefaultsByPersonality]
   );
   const activeConversationMode = useMemo<ConversationMode>(() => {
-    if (currentPersonality !== "sylana") {
-      return "default";
-    }
     return activeThread?.mode ?? modeDefaultsByPersonality[currentPersonality] ?? "default";
   }, [activeThread?.mode, currentPersonality, modeDefaultsByPersonality]);
 
@@ -789,9 +786,9 @@ export default function ChatScreen() {
           setModeDefaultsByPersonality((prev) => {
             const next = {
               ...prev,
-              sylana: "default" as ConversationMode,
+              [activeThread.personality]: "default" as ConversationMode,
             };
-            storage.setModeDefaultsByPersonality({ sylana: "default" }).catch(() => {});
+            storage.setModeDefaultsByPersonality({ [activeThread.personality]: "default" }).catch(() => {});
             return next;
           });
         }
@@ -1016,7 +1013,7 @@ export default function ChatScreen() {
             {activeThread?.title ?? "New chat"}
           </Text>
           <Text style={styles.headerToolsCount}>
-            {activeTools.length} tools active{currentPersonality === "sylana" ? ` • ${activeConversationMode} mode` : ""}
+            {activeTools.length} tools active • {activeConversationMode} mode
           </Text>
         </View>
         <Pressable style={styles.headerIconBtn} onPress={() => createNewThread(null)}>
@@ -1055,35 +1052,33 @@ export default function ChatScreen() {
         <View style={styles.controlsPanel}>
           <View style={styles.controlsSummaryRow}>
             <Text style={styles.controlsSummaryText}>
-              {activeTools.length} tools active{currentPersonality === "sylana" ? ` | ${activeConversationMode} mode` : ""}
+              {activeTools.length} tools active | {activeConversationMode} mode
             </Text>
             <Text style={styles.controlsSummaryHint}>Collapse controls for a cleaner chat view.</Text>
           </View>
 
-          {currentPersonality === "sylana" ? (
-            <View style={styles.modeRow}>
-              <View style={styles.modeLabelBlock}>
-                <Text style={styles.modeTitle}>Sylana Mode</Text>
-                <Text style={styles.modeSubtitle}>
-                  {MODE_OPTIONS.find((option) => option.id === activeConversationMode)?.description ?? MODE_OPTIONS[0].description}
-                </Text>
-              </View>
-              <View style={styles.modePills}>
-                {MODE_OPTIONS.map((option) => {
-                  const selected = option.id === activeConversationMode;
-                  return (
-                    <Pressable
-                      key={option.id}
-                      style={[styles.modePill, selected && styles.modePillActive]}
-                      onPress={() => updateActiveThreadMode(option.id)}
-                    >
-                      <Text style={[styles.modePillText, selected && styles.modePillTextActive]}>{option.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+          <View style={styles.modeRow}>
+            <View style={styles.modeLabelBlock}>
+              <Text style={styles.modeTitle}>{personalityConfig.name} Mode</Text>
+              <Text style={styles.modeSubtitle}>
+                {MODE_OPTIONS.find((option) => option.id === activeConversationMode)?.description ?? MODE_OPTIONS[0].description}
+              </Text>
             </View>
-          ) : null}
+            <View style={styles.modePills}>
+              {MODE_OPTIONS.map((option) => {
+                const selected = option.id === activeConversationMode;
+                return (
+                  <Pressable
+                    key={option.id}
+                    style={[styles.modePill, selected && styles.modePillActive]}
+                    onPress={() => updateActiveThreadMode(option.id)}
+                  >
+                    <Text style={[styles.modePillText, selected && styles.modePillTextActive]}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
 
           <ToolContextSelector
             embedded
